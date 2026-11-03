@@ -1,0 +1,28 @@
+{
+  "name": "jiangnan-yanyu",
+  "version": "0.1.0",
+  "private": true,
+  "description": "江南烟雨: a boat through a Jiangnan water town in the rain, rendered live with three.js.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 5193",
+    "fetch-assets": "node scripts/fetch-assets.mjs",
+    "capture": "node scripts/capture.mjs"
+  },
+  "dependencies": {
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@gltf-transform/core": "^4.5.1",
+    "@gltf-transform/extensions": "^4.5.1",
+    "@gltf-transform/functions": "^4.5.1",
+    "meshoptimizer": "^1.3.0",
+    "playwright-core": "1.60.0",
+    "vite": "^8.3.5"
+  }
+}
