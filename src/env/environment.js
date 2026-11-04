@@ -26,6 +26,11 @@ export const WEATHERS = {
 };
 export const WEATHER_NAMES = { mist: '薄雾', drizzle: '细雨', rain: '中雨', storm: '骤雨', after: '雨后' };
 
+// the hour sliders' day: from half past four round to half past four the next morning, so past midnight a slider
+// reads the hour plus 24
+export const DAY_START = 4.5;
+export const dialHours = (h) => (h < DAY_START ? h + 24 : h);
+
 const mix3 = (out, a, b, t) => out.set(lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t));
 
 // the sun rises ahead and to the right of a boat heading down the canal (-z) and stays ahead, so the wet air

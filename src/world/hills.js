@@ -12,8 +12,9 @@ const RINGS = [
   { r: 960, base: 58, amp: 120, freq: 3.3, seed: 37 },
   { r: 1450, base: 90, amp: 170, freq: 2.5, seed: 53 },
 ];
-// where the pagoda should stand: a little left of the canal's line, seen over the roofs at the far end
-const PAGODA_AIM = { x: -42, z: -570 };
+// where the pagoda should stand: a little left of the canal's line, seen over the roofs at the far end (and where
+// the temple bell is heard from)
+export const PAGODA_AIM = { x: -42, z: -570 };
 const PAGODA_TH = Math.atan2(PAGODA_AIM.z - CENTRE.z, PAGODA_AIM.x - CENTRE.x);
 
 function ridgeHeight(ring, i, th) {

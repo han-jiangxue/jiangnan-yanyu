@@ -71,3 +71,8 @@ textures shrunk to 512 WebP by `scripts/fetch-assets.mjs`:
 
 The roof tiles, window lattices and everything built (houses, bridge, banks) are drawn in code. So are the willows, the boats and the boatman, the people and their umbrellas, the banners, the laundry, the grass,
 the lotus pads and the banana plants.
+
+## Sound
+
+There are no recordings. The rain, the drips, the oar's creak and swish, the water, the thunder, the temple bell and
+the reverb are all synthesized in code (`src/audio/synth.js`) and mixed live with Web Audio.

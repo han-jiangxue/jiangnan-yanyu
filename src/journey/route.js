@@ -17,13 +17,16 @@ export const CHAPTERS = [
 
 export const OPENING = { title: '江南烟雨', poem: ['南朝四百八十寺', '多少楼台烟雨中'], by: '杜牧', from: '江南春' };
 
-// each journey a different hour and weather; the clock drifts on a little as the boat goes
+// each journey a different hour and weather; the clock drifts on a little as the boat goes. The last goes out at
+// midnight after the rain: most of the windows going dark one by one, the drips still falling, the moon over the
+// pagoda, and its temple bell (夜半钟声到客船)
 export const LOOPS = [
   { h: 8.2, w: 'drizzle' },
   { h: 6.3, w: 'mist' },
   { h: 14.6, w: 'after' },
   { h: 17.5, w: 'rain' },
   { h: 19.7, w: 'drizzle' },
+  { h: 23.1, w: 'after' },
 ];
 
 export const chapterAt = (z) => {

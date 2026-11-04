@@ -30,6 +30,7 @@ import { createRain } from './fx/rain.js';
 import { createDrips } from './fx/drips.js';
 import { createMist } from './fx/mist.js';
 import { createHalos } from './fx/halos.js';
+import { Soundscape } from './audio/soundscape.js';
 import { CameraRig } from './journey/camera.js';
 import { Director } from './journey/director.js';
 import { Journey } from './journey/journey.js';
@@ -216,16 +217,20 @@ async function boot() {
   const director = review ? null : new Director(camera, canvas);
   if (rig) composeShots(rig, lots);
   if (director && want.mode) director.setMode(want.mode);
+  const sound = new Soundscape();
+  env.onStrike = () => sound.strike();
 
   let ui = null, panel = null;
   const app = {
-    env, rig, pipe, journey, director, ctl,
+    env, rig, pipe, journey, director, ctl, sound,
     setShot(name) { rig.setShot(name); if (panel) panel.sync(); },
     setHours(h) { ctl.autoTime = false; env.setHours(h); if (panel) panel.sync(); },
     setAutoTime(on) { ctl.autoTime = on; },
     setWeather(w) { ctl.autoWeather = false; env.setWeather(w); if (panel) panel.sync(); },
     setAutoWeather(on) { ctl.autoWeather = on; },
     togglePause() { journey.togglePause(); },
+    // sound on or off, from the dock or M; the click or the key that asks is the gesture that lets it start
+    toggleSound() { return sound.toggle(); },
     // a photograph of the next frame drawn; several asked for before it is drawn all get that one
     capture() { return new Promise((res) => { ctl.captures.push(res); }); },
     // the address of this moment: the place always; the hour, the weather and the view only when chosen by hand.
@@ -304,6 +309,9 @@ async function boot() {
   window.addEventListener('keyup', (e) => keys.delete(e.code));
   window.addEventListener('blur', () => keys.clear());
   document.addEventListener('visibilitychange', () => keys.clear());
+  // The browser lets sound start only from a gesture, so every press and key offers one (启程 is usually the first).
+  // A finger going down is not one; lifting it is.
+  for (const ev of ['pointerdown', 'pointerup', 'touchend', 'keydown']) window.addEventListener(ev, () => sound.unlock(), { capture: true, passive: true });
 
   const resize = () => {
     pipe.resize();
@@ -412,6 +420,8 @@ async function boot() {
   }
 
   const state = { frames: 0, ready: false, fps: 60 };
+  // what the soundscape is told each frame; the boats with a boatman at the oar are the ones it listens to
+  const heard = { live: false, veil: false, rain: 0, wet: 0, wind: 0, hours: 0, storm: false, seat: false, boats: [player, ...moving] };
   let last = performance.now();
   let clockT = 0;
   // ?warm=seconds: run the boats and the people that long before the first frame (wakes need a track behind them)
@@ -488,6 +498,11 @@ async function boot() {
     U.uLampOn.value = env.lampOn;
     updateLamps(camera.position, env.lampOn, clockT);
     occ.update(renderer, scene, camera);
+    Object.assign(heard, {
+      live: review || ctl.started, veil: ctl.turning, rain: U.uRain.value, wet: U.uWet.value, wind: U.uWind.value.z,
+      hours: env.hours, storm: env.weather === 'storm', seat: !!director && director.mode === 'seat',
+    });
+    sound.update(dt, camera, heard);
 
     const cu = pipe.post.composite.uniforms;
     cu.uExposure.value = env.exposure;
@@ -523,7 +538,7 @@ async function boot() {
       else ui.ready().then(() => { ctl.started = true; });
     }
   }
-  window.jiangnan = { app, env, rig, director, journey, pipe, scene, camera, U, THREE, lots, state, player };
+  window.jiangnan = { app, env, rig, director, journey, pipe, scene, camera, U, lots, state, player, sound };
   window.__jn = state;
   player.update(0, journey.pose);
   if (director) director.update(0, journey.pose, player.root);

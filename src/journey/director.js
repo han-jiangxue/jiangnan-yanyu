@@ -12,6 +12,10 @@ import { clamp, lerp, smoothstep } from '../lib/math.js';
 
 const V = () => new THREE.Vector3();
 const ROOFS = 12.5; // above this a camera may be anywhere (ridges reach 10.3 m, the firewalls 11 m)
+// On a tall screen (a phone held upright) a view's usual vertical angle leaves only a sliver of the canal across: it
+// is widened until it takes in at least MIN_ACROSS degrees across, as far as MAX_TALL degrees from top to bottom.
+const MIN_ACROSS = 34, MAX_TALL = 72;
+const fovFor = (fov, aspect) => Math.max(fov, Math.min(MAX_TALL, (360 / Math.PI) * Math.atan(Math.tan((MIN_ACROSS * Math.PI) / 360) / aspect)));
 
 export class Director {
   constructor(camera, dom) {
@@ -190,11 +194,16 @@ export class Director {
     this.dist += (this.wantDist - this.dist) * (1 - Math.exp(-dt * 5));
     let snap = false;
     if (this.mode === 'follow' || this.mode === 'photo') {
+      // held upright, the camera looks nearer the boat's middle from a little farther back, so the whole boat stays in
+      // the narrow frame
+      const tall = smoothstep(1.1, 0.55, cam.aspect);
       const a = h + Math.PI + this.yaw;
-      const cd = this.dist * Math.cos(this.pitch);
-      this.tPos.set(p.x + Math.sin(a) * cd, 1.3 + this.dist * Math.sin(this.pitch), p.z + Math.cos(a) * cd);
+      const dist = this.dist * (1 + 0.15 * tall);
+      const cd = dist * Math.cos(this.pitch);
+      this.tPos.set(p.x + Math.sin(a) * cd, 1.3 + dist * Math.sin(this.pitch), p.z + Math.cos(a) * cd);
       this.keepOut(this.tPos);
-      this.tLook.set(p.x + fx * 2.5, 1.5 + this.dist * 0.03, p.z + fz * 2.5);
+      const ahead = 2.5 - 1.6 * tall;
+      this.tLook.set(p.x + fx * ahead, 1.5 + dist * 0.03, p.z + fz * ahead);
     } else if (this.mode === 'seat') {
       // sitting under the awning, looking out past the bow; the boat's own rocking carries the eye
       boatRoot.localToWorld(this.tPos.set(0, 0.9, 1.15));
@@ -268,8 +277,9 @@ export class Director {
     if (this.mode !== 'seat' && !fixed) this.keepOut(this.pos);
     cam.position.copy(this.pos);
     cam.lookAt(this.look);
-    if (Math.abs(cam.fov - this.fov) > 0.01) {
-      cam.fov += (this.fov - cam.fov) * (snap ? 1 : 1 - Math.exp(-dt * 6));
+    const fov = fovFor(this.fov, cam.aspect);
+    if (Math.abs(cam.fov - fov) > 0.01) {
+      cam.fov += (fov - cam.fov) * (snap ? 1 : 1 - Math.exp(-dt * 6));
       cam.updateProjectionMatrix();
     }
   }

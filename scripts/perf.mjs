@@ -42,7 +42,7 @@ await page.evaluate(() => {
 });
 await page.evaluate(() => window.__perfRun);
 const out = await page.evaluate(() => {
-  const { pipe, scene, THREE } = window.jiangnan;
+  const { pipe, scene } = window.jiangnan;
   const r = pipe.renderer;
   // memory: unique geometries' buffers, textures' base levels (x4/3 for mips)
   const geos = new Set(), texs = new Set();

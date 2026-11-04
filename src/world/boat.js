@@ -298,6 +298,9 @@ export class Boat {
     this.lamp = this.lamps[0];
     this.phase = (o.seed || 0) * 1.7;
     this.speed = 0;
+    // where the stroke is (radians) and whether the boatman is working the oar or only steadying it, for the sound
+    this.stroke = 0;
+    this.working = false;
     this._hand = new THREE.Vector3();
   }
 
@@ -305,6 +308,9 @@ export class Boat {
   update(t, pose) {
     const r = this.root;
     const stroke = this.phase + t * 2 * Math.PI * (pose.speed > 0.05 ? 0.55 : 0.18);
+    this.stroke = stroke;
+    this.working = pose.speed > 0.05;
+    this.speed = pose.speed;
     // a sculled boat's bow swings a little with every stroke
     const yaw = pose.speed > 0.05 ? Math.sin(stroke) * 0.02 : 0;
     r.position.set(pose.x, Math.sin(t * 1.3 + this.phase) * 0.018, pose.z);

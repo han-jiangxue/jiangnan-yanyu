@@ -4,7 +4,7 @@
 // place and, when set by hand, the hour, the weather and the view, so a copied link opens on the same moment.
 // The structure (dock groups, chapter cards, photo stamp, URL sync) follows Sakura Fantasy's ui (c) 2026 Bill Chan, MIT.
 import { CHAPTERS, OPENING, progressAt } from '../journey/route.js';
-import { WEATHER_NAMES } from '../env/environment.js';
+import { WEATHER_NAMES, DAY_START, dialHours } from '../env/environment.js';
 import { typingIn } from './keys.js';
 
 const $ = (tag, cls, html) => {
@@ -51,7 +51,7 @@ export class JourneyUI {
     this.loader = L;
     const poem = $('div', 'opening-poem', OPENING.poem.map((l) => `<div class="line">${l}</div>`).join('') + `<div class="by">${OPENING.by}《${OPENING.from}》</div>`);
     this.go = $('button', 'go', '<span class="seal">启</span><span class="lbl">启程</span>');
-    this.hint = $('div', 'go-hint', '点击或按回车，撑船入镇');
+    this.hint = $('div', 'go-hint', '点击或按回车，撑船入镇 · 有雨声');
     L.appendChild(poem);
     L.appendChild(this.go);
     L.appendChild(this.hint);
@@ -195,7 +195,7 @@ export class JourneyUI {
     const rt = grp('时');
     const time = $('div', 'time');
     this.slider = $('input');
-    Object.assign(this.slider, { type: 'range', min: 4.5, max: 21, step: 0.05 });
+    Object.assign(this.slider, { type: 'range', min: DAY_START, max: DAY_START + 24, step: 0.05 });
     this.slider.setAttribute('aria-label', '时辰');
     this.slider.addEventListener('input', () => { this.dragging = true; app.setHours(parseFloat(this.slider.value)); });
     // done with the slider: give the keys back to the boat
@@ -217,13 +217,14 @@ export class JourneyUI {
     sep();
     const ro = grp('', 'solo');
     this.sailBtn = btn(ro, '止', '停船', () => app.togglePause());
+    this.soundBtn = btn(ro, '声', '静音', () => app.toggleSound());
     btn(ro, '写', '拍照', () => this.photo(true));
     btn(ro, '传', '分享此景', () => this.share());
     btn(ro, '记', '关于', () => this.about.classList.add('on'));
     R.appendChild(d);
     document.addEventListener('pointerdown', (e) => { if (!d.contains(e.target)) d.querySelectorAll('.grp.open').forEach((x) => x.classList.remove('open')); });
 
-    this.hints = $('div', 'hints', '<span><kbd>W S</kbd>快慢</span><span><kbd>A D</kbd>掌舵</span><span><kbd>拖动</kbd>环顾</span><span><kbd>滚轮</kbd>远近</span><span><kbd>C</kbd>视角</span><span><kbd>空格</kbd>停船</span><span><kbd>P</kbd>拍照</span><span><kbd>H</kbd>隐藏</span>');
+    this.hints = $('div', 'hints', '<span><kbd>W S</kbd>快慢</span><span><kbd>A D</kbd>掌舵</span><span><kbd>拖动</kbd>环顾</span><span><kbd>滚轮</kbd>远近</span><span><kbd>C</kbd>视角</span><span><kbd>空格</kbd>停船</span><span><kbd>P</kbd>拍照</span><span><kbd>M</kbd>声音</span><span><kbd>H</kbd>隐藏</span>');
     R.appendChild(this.hints);
     this.toastEl = $('div', 'toast');
     R.appendChild(this.toastEl);
@@ -250,8 +251,8 @@ export class JourneyUI {
     this.about.innerHTML = `<div class="sheet"><button class="x" aria-label="关闭">✕</button>
       <h2>江南烟雨</h2>
       <p>撑一只乌篷船，在细雨里穿过一座江南水乡：烟雨入镇，廊棚市河，石桥烟柳，枕河人家。每一程换一个时辰、一种天气。</p>
-      <p>three.js 实时渲染，房屋、桥、船、柳树、行人都由代码生成。实现思路参考 <a href="https://github.com/billpwchan/sakura-fantasy" target="_blank" rel="noopener">Sakura Fantasy</a>（MIT）；贴图与道具模型来自 <a href="https://polyhaven.com" target="_blank" rel="noopener">Poly Haven</a>（CC0）。诗句：杜牧、韦庄、陆游、志南、杜荀鹤。</p>
-      <div class="keys"><b>W / S</b><span>快一些，慢一些</span><b>A / D</b><span>掌舵</span><b>拖动 · 滚轮</b><span>环顾，远近</span><b>C</b><span>跟随、船舱、电影</span><b>空格</b><span>停船或启程</span><b>P · H</b><span>拍照，隐藏界面</span></div>
+      <p>three.js 实时渲染，房屋、桥、船、柳树、行人都由代码生成；雨声、滴水、橹声、雷声和钟声也是 Web Audio 实时合成的。实现思路参考 <a href="https://github.com/billpwchan/sakura-fantasy" target="_blank" rel="noopener">Sakura Fantasy</a>（MIT）；贴图与道具模型来自 <a href="https://polyhaven.com" target="_blank" rel="noopener">Poly Haven</a>（CC0）。诗句：杜牧、韦庄、陆游、志南、杜荀鹤。</p>
+      <div class="keys"><b>W / S</b><span>快一些，慢一些</span><b>A / D</b><span>掌舵</span><b>拖动 · 滚轮</b><span>环顾，远近</span><b>C</b><span>跟随、船舱、电影</span><b>空格</b><span>停船或启程</span><b>P · H</b><span>拍照，隐藏界面</span><b>M</b><span>声音开关</span></div>
       <div class="seal">烟雨</div></div>`;
     this.about.addEventListener('click', (e) => { if (e.target === this.about || e.target.classList.contains('x')) this.about.classList.remove('on'); });
     R.appendChild(this.about);
@@ -265,6 +266,7 @@ export class JourneyUI {
         if (this.userHidden) this.toast(['界面已隐藏', '按 H 重新显示']);
       }
       if (e.code === 'KeyP') this.photo(!this.photoOn);
+      if (e.code === 'KeyM') this.toast(this.app.toggleSound() ? ['已静音', '按 M 再听雨'] : ['听雨', '按 M 静音']);
       if (e.code === 'Escape') {
         this.about.classList.remove('on');
         d.querySelectorAll('.grp.open').forEach((x) => x.classList.remove('open'));
@@ -388,7 +390,7 @@ export class JourneyUI {
     this.boatDot.style.top = `${f * 100}%`;
     this.nodes.forEach((n, i) => n.classList.toggle('past', i <= j.chapter));
     const h = env.hours;
-    if (!this.dragging) this.slider.value = h.toFixed(2);
+    if (!this.dragging) this.slider.value = dialHours(h).toFixed(2);
     const hh = Math.floor(h), mm = Math.floor((h - hh) * 60);
     this.clock.firstChild.textContent = shichen(h);
     this.clock.lastChild.textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
@@ -403,6 +405,12 @@ export class JourneyUI {
     this.sailBtn.classList.toggle('on', moored);
     this.holdBtn.firstChild.textContent = moored ? '行' : '止';
     this.holdBtn.querySelector('i').textContent = moored ? '启程' : '停船';
+    // the sound button shows what is heard, its tip what a press would do
+    const muted = this.app.sound.muted;
+    this.soundBtn.firstChild.textContent = muted ? '静' : '声';
+    this.soundBtn.querySelector('.tip').textContent = muted ? '听雨' : '静音';
+    this.soundBtn.setAttribute('aria-label', muted ? '打开声音' : '静音');
+    this.soundBtn.classList.toggle('on', muted);
     this.syncUrl(now);
   }
 }
