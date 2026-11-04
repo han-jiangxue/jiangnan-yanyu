@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Kit } from './kit.js';
 import { buildHouse } from './house.js';
-import { patch } from '../core/shared.js';
+import { patch, U, OCC } from '../core/shared.js';
 import { LAYER_NOREFL, LAYER_MIRROR } from '../core/pipeline.js';
 import { bankX, bankNormal, bankKind, canalX, canalSlope, coreDist, detailDist, BANK_Y, Z0, Z1, BRIDGE_Z, LANE_W, CORRIDOR, SLAB, SLAB_BRIDGES } from './layout.js';
 import { rng } from '../lib/math.js';
@@ -128,20 +128,60 @@ function capGeometries() {
   return { cap, drip };
 }
 
-let capMat = null;
+let capMat = null, lipMat = null;
 const ENDS_CHUNK = 40; // metres of canal per instanced batch, one batch per bank
 const ENDS_FAR = 75; // beyond this a cap is a few pixels wide: not drawn at all
 
-// Instanced round caps and drip tiles from lists of world matrices, in short batches per bank so that the view's
-// frustum culls them and the far ones can be left out; group.userData.update(cameraPosition) does the latter.
-export function tileEnds(caps, drips) {
+// Instanced round caps and drip tiles, and the snow lips along the eaves (house.js snowLip), from lists of world
+// matrices, in short batches per bank so that the view's frustum culls them and the far ones can be left out;
+// group.userData.update(cameraPosition) does the latter, and keeps the lips away in a season without snow.
+export function tileEnds(caps, drips, lips = []) {
   const group = new THREE.Group();
   group.name = 'tile-ends';
-  if (!capMat) capMat = patch(new THREE.MeshStandardMaterial({ color: 0x26282a, roughness: 0.6 }), { key: 'cap', wet: 0.4, gloss: 0.7 });
+  // From the water a roof's snow shows only at its edge, where it lies over the tile ends: their upper halves go white
+  // with it (the tiles' own height, from the vertex, before the instance's placing)
+  if (!capMat) {
+    capMat = patch(new THREE.MeshStandardMaterial({ color: 0x26282a, roughness: 0.6 }), {
+      key: 'cap',
+      wet: 0.4,
+      gloss: 0.7,
+      vertexHead: 'varying float vCapY;',
+      fragHead: 'varying float vCapY;',
+      hooks: {
+        vertex: 'vCapY = transformed.y;',
+        preLight: 'sfSnowK = max(sfSnowK, uSnow * smoothstep(-0.01, 0.045, vCapY));',
+      },
+    });
+  }
+  if (!lipMat) {
+    // Snow, as thick and as deep up the slope as the snow lying (the lip's box stands on y = 0 with its front at z = 0),
+    // so that a thin fall is a fine line at the edge and not a white band over a roof still mostly bare; uneven along
+    // the eave; and none under a roof just over it (a hood under a balcony), though one high above lets the snow
+    // drift in (the waist eave under the main eave)
+    lipMat = patch(new THREE.MeshStandardMaterial({ roughness: 0.92 }), {
+      key: 'snow-lip',
+      wet: 0,
+      gloss: 0,
+      snow: 0,
+      vertexHead: OCC,
+      hooks: {
+        vertex: /* glsl */ `
+          vec3 jnLW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
+          float jnOver = sfOccHeight(jnLW.xz) - jnLW.y;
+          float jnL = smoothstep(0.05, 0.75, uSnow) * (1.0 - smoothstep(0.15, 0.4, jnOver) * smoothstep(1.4, 1.0, jnOver));
+          transformed.y *= jnL * (0.55 + 0.45 * sfNoise(jnLW.xz * 1.7));
+          transformed.z *= jnL;`,
+        preLight: 'diffuseColor.rgb = vec3(0.82, 0.84, 0.88);',
+      },
+    });
+  }
   const { cap, drip } = capGeometries();
+  // a lip: a box standing on y = 0 with its front at z = 0, reaching back up the slope to z = -1, cut along its
+  // length so that its thickness can vary
+  const lip = new THREE.BoxGeometry(1, 1, 1, 4, 1, 1).translate(0, 0.5, -0.5);
   let verts = 0;
   const batches = [];
-  for (const [geo, list, name] of [[cap, caps, 'caps'], [drip, drips, 'drips']]) {
+  for (const [geo, list, name, mat] of [[cap, caps, 'caps', capMat], [drip, drips, 'drips', capMat], [lip, lips, 'snow-lips', lipMat]]) {
     const bins = new Map();
     for (const m of list) {
       const x = m.elements[12], z = m.elements[14];
@@ -150,7 +190,8 @@ export function tileEnds(caps, drips) {
       bins.get(key).push(m);
     }
     for (const part of bins.values()) {
-      const im = new THREE.InstancedMesh(geo, capMat, part.length);
+      const im = new THREE.InstancedMesh(geo, mat, part.length);
+      im.userData.snow = mat === lipMat;
       part.forEach((m, i) => im.setMatrixAt(i, m));
       im.instanceMatrix.needsUpdate = true;
       im.computeBoundingSphere();
@@ -167,9 +208,10 @@ export function tileEnds(caps, drips) {
   }
   group.userData.verts = verts;
   group.userData.update = (cam) => {
+    const snowy = U.uSnow.value > 0.02;
     for (const im of batches) {
       const b = im.boundingSphere;
-      im.visible = b.center.distanceTo(cam) - b.radius < ENDS_FAR;
+      im.visible = (snowy || !im.userData.snow) && b.center.distanceTo(cam) - b.radius < ENDS_FAR;
     }
   };
   return group;
@@ -181,8 +223,8 @@ const NEAR_IN = 55, NEAR_OUT = 65; // a run is drawn in full detail while the ca
 export function createTown(mats, lots) {
   const group = new THREE.Group();
   group.name = 'town';
-  const ctx = { caps: [], drips: [], lamps: [] };
-  const spare = { caps: [], drips: [], lamps: [] }; // what the simpler copies would add to ctx: not wanted twice
+  const ctx = { caps: [], drips: [], lamps: [], lips: [] };
+  const spare = { caps: [], drips: [], lamps: [], lips: [] }; // what the simpler copies would add to ctx: not wanted twice
   const chunks = new Map(), fine = new Map();
   for (const lot of lots) {
     const fineLot = lot.spec.lod === 0;
@@ -248,7 +290,7 @@ export function createTown(mats, lots) {
   };
   group.userData.update(new THREE.Vector3(1e9, 0, 0));
   // the tile ends, instanced
-  const ends = tileEnds(ctx.caps, ctx.drips);
+  const ends = tileEnds(ctx.caps, ctx.drips, ctx.lips);
   group.add(ends);
   group.userData.ends = ends;
   stats.verts += ends.userData.verts;

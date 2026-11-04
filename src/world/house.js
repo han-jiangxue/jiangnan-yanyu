@@ -129,6 +129,31 @@ export function lanternGeometry() {
   return new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), 14);
 }
 
+// ------------------------------------------------------------------ snow along the eaves
+
+const _le = new THREE.Euler(0, 0, 0, 'YXZ'), _lq = new THREE.Quaternion(), _ld = new THREE.Vector3(), _ln = new THREE.Vector3(), _ls = new THREE.Vector3();
+// the turn about y that sends a lip's front out the way its slope falls: [falling toward +, toward -] off each axis
+const LIP_YAW = { x: [0, Math.PI], z: [Math.PI / 2, -Math.PI / 2] };
+
+// Snow lying along an eave or on a ridge's flat top: from the water this is all of a roof's snow that shows, a white
+// lip over the tile ends. A box lying on the slope from the edge up, its front a little past the edge, collected in
+// out.lips (when there is such a list) to be drawn instanced with the tile ends (town.js tileEnds), growing with the
+// snow lying. (x, y, z): the middle of the edge in the local frame; len: its length along `axis` ('x' or 'z'); fall:
+// +1 or -1, the way the slope runs down off that axis; tilt: the slope's angle, 0 for a flat top; o.depth up the
+// slope, o.thick at its fullest, o.over how far the front stands past the edge (half the depth centres a flat top).
+export function snowLip(kit, out, x, y, z, len, axis, fall, tilt, o = {}) {
+  if (!out || !out.lips) return;
+  const depth = o.depth ?? 0.3;
+  // each lip a little thicker or thinner than the next, from where it is
+  const h = Math.abs(Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453) % 1;
+  _le.set(tilt, LIP_YAW[axis][fall > 0 ? 0 : 1], 0);
+  _lq.setFromEuler(_le);
+  _ld.set(0, 0, 1).applyQuaternion(_lq); // down the slope
+  _ln.set(0, 1, 0).applyQuaternion(_lq); // off it
+  _p.set(x, y, z).addScaledVector(_ld, o.over ?? 0.03).addScaledVector(_ln, 0.015);
+  out.lips.push(kit.m.clone().multiply(new THREE.Matrix4().compose(_p, _lq, _ls.set(len + 0.04, (o.thick ?? 0.07) * (0.7 + 0.3 * h), depth))));
+}
+
 // ------------------------------------------------------------------ windows and doors
 
 function windowZ(kit, s, zf, x, y0, w, h, o = {}) {
@@ -150,13 +175,14 @@ function windowZ(kit, s, zf, x, y0, w, h, o = {}) {
   kit.box('timber', x - w / 2 - fw / 2, y0 + h / 2, zc, fw, h, fd, { col: FRAME_COL });
   kit.box('timber', x + w / 2 + fw / 2, y0 + h / 2, zc, fw, h, fd, { col: FRAME_COL });
   kit.box('slab', x, y0 - fw - 0.035, zf + s * 0.08, w + 0.32, 0.07, 0.16);
-  if (o.hood) hoodZ(kit, s, zf, x, y0 + h + fw + 0.04, w + 0.55);
+  if (o.hood) hoodZ(kit, s, zf, x, y0 + h + fw + 0.04, w + 0.55, o.ctx);
 }
 
 // a little tiled hood over a window (小披檐)
-function hoodZ(kit, s, zf, x, yb, wH) {
+function hoodZ(kit, s, zf, x, yb, wH, ctx) {
   const d = 0.46, rise = 0.24;
   const x0 = x - wH / 2, x1 = x + wH / 2;
+  snowLip(kit, ctx, x, yb + 0.02, zf + s * d, wH, 'x', s, Math.atan2(rise, d), { depth: 0.22, thick: 0.05 });
   slope(kit, 'tile', [x0, yb + rise, zf], [x1, yb + rise, zf], [x0, yb, zf + s * d], [x1, yb, zf + s * d], { span: [-1, -1], spanRaw: true });
   slope(kit, 'timber', [x0, yb + rise - 0.06, zf], [x1, yb + rise - 0.06, zf], [x0, yb - 0.06, zf + s * d], [x1, yb - 0.06, zf + s * d], { down: true, col: FRAME_COL });
   kit.box('ridge', x, yb + rise + 0.04, zf + s * 0.05, wH + 0.04, 0.09, 0.11);
@@ -165,9 +191,10 @@ function hoodZ(kit, s, zf, x, yb, wH) {
 
 // a narrow tiled pent roof along the whole front between the floors (腰檐), the line that gives a Jiangnan
 // facade its horizontal rhythm
-function waistEave(kit, spec, zf, y, depth, lod) {
+function waistEave(kit, spec, zf, y, depth, lod, ctx) {
   const rise = depth * 0.55;
   const x0 = -spec.W / 2 - 0.05, x1 = spec.W / 2 + 0.05;
+  if (lod === 0) snowLip(kit, ctx, 0, y + 0.02, zf + depth, x1 - x0, 'x', 1, Math.atan2(rise, depth), { depth: 0.25, thick: 0.06 });
   slope(kit, 'tile', [x0, y + rise, zf], [x1, y + rise, zf], [x0, y, zf + depth], [x1, y, zf + depth], { span: [-1, -1], spanRaw: true });
   slope(kit, 'timber', [x0, y + rise - 0.07, zf], [x1, y + rise - 0.07, zf], [x0, y - 0.07, zf + depth], [x1, y - 0.07, zf + depth], { down: true, col: FRAME_COL });
   kit.box('timber', 0, y - 0.09, zf + depth, x1 - x0, 0.1, 0.035, { col: FRAME_COL });
@@ -226,13 +253,13 @@ function waterFace(kit, spec, hh, R, zf, ctx, Rd) {
       }
       continue;
     }
-    if (R.next() < 0.75) windowZ(kit, 1, zf, x + R.range(-0.4, 0.4), 1.15, R.range(0.7, 0.95), R.range(0.75, 0.95), { R: Rd, lod: spec.lod, hood: R.next() < 0.3 });
+    if (R.next() < 0.75) windowZ(kit, 1, zf, x + R.range(-0.4, 0.4), 1.15, R.range(0.7, 0.95), R.range(0.75, 0.95), { R: Rd, lod: spec.lod, hood: R.next() < 0.3, ctx });
   }
   if (spec.floors !== 2) return;
   const timber = upperTimber(spec);
   const balcony = timber && spec.lod === 0 && pickOf(spec, 22) < 0.4;
   if (spec.waist && !balcony) {
-    waistEave(kit, spec, zf, g1 - 0.05, 0.5, spec.lod);
+    waistEave(kit, spec, zf, g1 - 0.05, 0.5, spec.lod, ctx);
     // now and then a lantern hung under the waist eave, over the water
     if (lamps && pickOf(spec, 9) < 0.25) {
       const xl = -W / 2 + bw * (Math.floor(pickOf(spec, 11) * nb) + 0.5);
@@ -259,7 +286,7 @@ function waterFace(kit, spec, hh, R, zf, ctx, Rd) {
     const two = bw > 3.4;
     const w = Math.min(two ? bw / 2 - 0.55 : bw - 0.7, R.range(1.0, 1.5));
     const h = R.range(0.95, 1.15), hood = R.next() < 0.45, paper = R.next() < 0.35;
-    for (const dx of two ? [-bw / 4, bw / 4] : [0]) windowZ(kit, 1, zf, x + dx, g1 + 0.85, w, h, { R: Rd, lod: spec.lod, hood, paper });
+    for (const dx of two ? [-bw / 4, bw / 4] : [0]) windowZ(kit, 1, zf, x + dx, g1 + 0.85, w, h, { R: Rd, lod: spec.lod, hood, paper, ctx });
   }
 }
 
@@ -326,7 +353,7 @@ function shopFace(kit, spec, hh, R, zf, ctx, Rd) {
     kit.box('timber', x, eaveH / 2, zp, 0.2, eaveH, 0.2, { col: TIMBER_COL, span: [0, eaveH] });
   }
   kit.box('timber', 0, g1, zp, W, 0.26, 0.2, { col: TIMBER_COL });
-  if (spec.waist && spec.floors === 2) waistEave(kit, spec, zf + 0.2, g1 + 0.18, 0.7, lod);
+  if (spec.waist && spec.floors === 2) waistEave(kit, spec, zf + 0.2, g1 + 0.18, 0.7, lod, ctx);
   // the step along the front
   kit.box('slab', 0, 0.09, zf + 0.42, W + 0.1, 0.18, 0.6);
   for (let i = 0; i < nb; i++) {
@@ -390,6 +417,8 @@ function roof(kit, spec, hh, ctx) {
     // fascia under the tile ends
     kit.box('timber', (x0 + x1) / 2, yE - 0.09, side * (zE - 0.02), x1 - x0, 0.12, 0.04, { col: FRAME_COL });
     if (lod === 0) {
+      // the snow along the eave, lying on the covers' crests
+      snowLip(kit, ctx, (x0 + x1) / 2, yE + 0.035, side * zE, x1 - x0, 'x', side, Math.atan(PITCH));
       // rafters under the overhang
       const ang = Math.atan(PITCH);
       for (let x = x0 + 0.15; x < x1 - 0.1; x += 0.26) {
@@ -409,8 +438,9 @@ function roof(kit, spec, hh, ctx) {
       }
     }
   }
-  // ridge
+  // ridge, and the snow along its top
   kit.box('ridge', (x0 + x1) / 2, ridgeH + 0.12, 0, x1 - x0 + 0.04, 0.3, 0.24);
+  if (lod === 0) snowLip(kit, ctx, (x0 + x1) / 2, ridgeH + 0.27, 0, x1 - x0 + 0.04, 'x', 1, 0, { depth: 0.24, thick: 0.06, over: 0.12 });
   for (const [sx, kind] of [[-1, left], [1, right]]) {
     if (kind !== 'plain') continue;
     const xe = sx < 0 ? x0 : x1;
@@ -458,7 +488,7 @@ function walls(kit, spec, hh) {
 
 // stepped firewalls (马头墙): columns of wall stepping down from the ridge, each capped with a small tiled roof and
 // ending in an upturned block
-function firewall(kit, spec, hh, sx, steps) {
+function firewall(kit, spec, hh, sx, steps, ctx) {
   const { D, W, tint, lod } = spec;
   const { ridgeH } = hh;
   const cx = sx * W / 2;
@@ -489,6 +519,11 @@ function firewall(kit, spec, hh, sx, steps) {
       slope(kit, 'timber', [cx, yr - 0.07, c.za - 0.05], [cx, yr - 0.07, c.zb + 0.05], [cx + s * capW, ye - 0.07, c.za - 0.05], [cx + s * capW, ye - 0.07, c.zb + 0.05], { down: true, col: FRAME_COL });
     }
     kit.box('ridge', cx, yr + 0.04, zc, 0.13, 0.1, len + 0.1);
+    // snow along both of the cap's eaves and on its ridge: the stepped white lines of a firewall in snow
+    if (lod === 0) {
+      for (const s of [-1, 1]) snowLip(kit, ctx, cx + s * capW, ye + 0.02, zc, len + 0.1, 'z', s, Math.atan2(yr - ye, capW), { depth: 0.2, thick: 0.05 });
+      snowLip(kit, ctx, cx, yr + 0.09, zc, len + 0.1, 'z', 1, 0, { depth: 0.14, thick: 0.05, over: 0.07 });
+    }
     // the upturned block (座头) at the outer end of each step
     if (c.end !== 0) {
       const ze = c.end > 0 ? c.zb : c.za;
@@ -535,8 +570,8 @@ export function buildHouse(kit, spec, ctx) {
   const { W, D, lod } = spec;
   walls(kit, spec, hh);
   for (const [sx, kind] of [[-1, spec.gables[0]], [1, spec.gables[1]]]) {
-    if (kind === 'mt2') firewall(kit, spec, hh, sx, 2);
-    if (kind === 'mt3') firewall(kit, spec, hh, sx, 3);
+    if (kind === 'mt2') firewall(kit, spec, hh, sx, 2, ctx);
+    if (kind === 'mt3') firewall(kit, spec, hh, sx, 3, ctx);
   }
   roof(kit, spec, hh, ctx);
   const zf = D / 2;

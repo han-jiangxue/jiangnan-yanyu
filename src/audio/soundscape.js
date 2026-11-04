@@ -1,16 +1,20 @@
 // The soundscape: what you hear on the boat. The rain is three things at once: its wash over the whole town, the drops
 // in the canal and on the stones round about, and, under a roof or the boat's awning, the drumming just overhead; a
-// roof over you muffles the open rain, and the bridge's arch rings with it. Over the rain come the single sounds:
-// drips off the eaves, each boatman's oar creaking on its pin and its blade swishing through the water, the water
-// against the hull, thunder after the lightning, and late at night or at first light a temple bell from beyond the
-// roofs. All of it is made in code (audio/synth.js) once the first gesture comes, since the browser lets sound start
-// only from one, and a piece at a time so that no frame stalls; thunder and the bell only when first wanted.
+// roof over you muffles the open rain, and the bridge's arch rings with it. Snow is near silence: the faintest hiss
+// of the flakes, and what lies on the roofs swallows the echoes. Summer has its cicadas by day and frogs by night,
+// autumn its crickets from dusk on and dry leaves stirring in the wind. Over it all come the single sounds: drips off
+// the eaves, each boatman's oar creaking on its pin and its blade swishing through the water, the water against the
+// hull, thunder after the lightning, and late at night or at first light a temple bell from beyond the roofs. All of
+// it is made in code (audio/synth.js) once sound is on (it starts muted) and a gesture has come, since the browser lets
+// sound start only from one, and a piece at a time so that no frame stalls; thunder, the bell and each season's
+// creatures only when first wanted.
 import * as THREE from 'three';
 import * as S from './synth.js';
 import { bankX, inCanal, BANK_Y, LANE_W, CORRIDOR } from '../world/layout.js';
 import { BRIDGE } from '../world/bridge.js';
 import { SLABS } from '../world/slabbridge.js';
 import { PAGODA_AIM } from '../world/hills.js';
+import { dripActivity } from '../fx/drips.js';
 import { clamp, lerp, smoothstep, vnoise } from '../lib/math.js';
 
 const MUTE_KEY = 'jiangnan-yanyu:muted';
@@ -58,8 +62,9 @@ export function shelter(p, seat) {
 export class Soundscape {
   constructor() {
     this.ctx = null;
-    this.muted = false;
-    try { this.muted = localStorage.getItem(MUTE_KEY) === '1'; } catch { /* storage refused */ }
+    // muted until sound is turned on, and on from then on for this device
+    this.muted = true;
+    try { this.muted = localStorage.getItem(MUTE_KEY) !== '0'; } catch { /* storage refused */ }
     this.g = {}; // the beds' gains, as each is made
     this.buf = {}; // the single sounds, as each is made
     this.asked = {};
@@ -140,10 +145,11 @@ export class Soundscape {
     this.master.connect(comp).connect(this.meter).connect(c.destination);
     this.mix = c.createGain();
     this.mix.connect(this.master);
-    // the reverb: water and stone between close walls, and the bridge's arch
+    // the reverb: water and stone between close walls, and the bridge's arch; snow lying about swallows some of it
     this.verb = c.createConvolver();
     this.send = c.createGain();
-    this.send.connect(this.verb).connect(this.master);
+    this.verbOut = c.createGain();
+    this.send.connect(this.verb).connect(this.verbOut).connect(this.master);
     // the open rain: muffled and quieter under a roof, sent to the reverb more inside the arch
     this.rainBus = c.createGain();
     this.rainLP = this.biquad('lowpass', 16000, 0.5);
@@ -161,13 +167,15 @@ export class Soundscape {
     this.queue.push(
       () => { this.verb.buffer = this.buffer(S.impulse(c.sampleRate)); },
       () => {
-        const noise = this.buffer(S.pinkLoop(5, LOW_RATE, 11));
+        const noise = (this.noise = this.buffer(S.pinkLoop(5, LOW_RATE, 11)));
         this.washLP = this.biquad('lowpass', 4000, 0.5);
         this.airLP = this.biquad('lowpass', 400, 0.5);
         this.g.wash = this.bed(noise, [this.biquad('highpass', 280, 0.6), this.washLP], this.rainBus);
         this.g.air = this.bed(noise, [this.airLP], this.mix, { offset: 2.1, rate: 0.93 });
         this.g.lap = this.bed(noise, [this.biquad('bandpass', 260, 1.1)], this.mix, { offset: 3.7, rate: 0.9 });
         this.g.bow = this.bed(noise, [this.biquad('bandpass', 1050, 0.7)], this.mix, { offset: 1.3, rate: 1.07 });
+        // the hiss of snow settling, high and very faint
+        this.g.hush = this.bed(noise, [this.biquad('highpass', 2500, 0.5), this.biquad('lowpass', 8000, 0.5)], this.mix, { offset: 0.7, rate: 1.13 });
       },
       () => { this.g.waterSparse = this.bed(this.buffer(drops(4.3, 34, S.dropOnWater, 21)), [], this.rainBus, { rate: 0.98 }); },
       () => { this.g.waterDense = this.bed(this.buffer(drops(3.7, 320, S.dropOnWater, 22)), [], this.rainBus, { rate: 1.02 }); },
@@ -271,7 +279,9 @@ export class Soundscape {
   }
 
   // Once a frame. s: { live (the journey has begun, or review), veil (the paper is down), rain, wet, wind, hours,
-  // storm, seat (listening from the seat under the awning), boats (those with a boatman) }
+  // night, daylight, storm, snowFall, snowLying, summer, autumn (the seasons' weights), trees, pond (metres to the
+  // nearest crown and the nearest lotus), seat (listening from the seat under the awning), boats (those with a
+  // boatman) }
   update(dt, camera, s) {
     const c = this.ctx;
     if (!c) return;
@@ -316,6 +326,30 @@ export class Soundscape {
       this.ask('thunder', make(41, false), make(42, false), make(43, true));
     }
     if (bellHours(s.hours)) this.ask('bell', () => { this.buf.bell = this.buffer(S.bell(LOW_RATE)); });
+    // autumn's crickets and its dry leaves, once autumn comes (and the noise they share is made)
+    if (s.autumn > 0.05 && this.noise) {
+      this.ask('autumn',
+        () => {
+          this.cricketLP = this.biquad('lowpass', 12000, 0.5);
+          this.g.crickets = this.bed(this.buffer(S.crickets(7.7, LOW_RATE, 81)), [this.cricketLP], this.mix);
+        },
+        () => {
+          this.g.rustle = this.bed(this.buffer(S.grainLoop({ seconds: 5.3, rate: DROP_RATE, perSecond: 70, grain: S.crackle, seed: 71, loud: 2 })), [this.biquad('highpass', 1200, 0.7)], this.mix);
+          this.g.leafAir = this.bed(this.noise, [this.biquad('bandpass', 3000, 0.6)], this.mix, { offset: 1.9, rate: 1.05 });
+        });
+    }
+    // summer's cicadas (made a singer at a time) and frogs, once summer comes
+    if (s.summer > 0.05 && this.noise) {
+      let job = null;
+      this.ask('summer',
+        () => { job = S.cicadaSteps(9.3, LOW_RATE, 91); },
+        ...[0, 1, 2, 3].map((i) => () => job.steps[i]()),
+        () => { this.g.cicadas = this.bed(this.buffer(job.done()), [this.biquad('highpass', 2500, 0.6)], this.mix); },
+        () => {
+          this.frogLP = this.biquad('lowpass', 9000, 0.5);
+          this.g.frogs = this.bed(this.buffer(S.frogs(8.9, LOW_RATE, 93)), [this.frogLP], this.mix);
+        });
+    }
     this.drips(dt, s);
     this.oars(s);
     this.bells(dt, s);
@@ -341,7 +375,9 @@ export class Soundscape {
       }
       set(g.lap.gain, 0.06 * (0.6 + 0.8 * vnoise(this.clock * 0.4, 9.1)) + (s.seat ? 0.04 : 0));
       set(g.bow.gain, 0.1 * clamp(bow, 0, 1.3));
+      set(g.hush.gain, 0.055 * Math.pow(s.snowFall, 0.7));
     }
+    set(this.verbOut.gain, 1 - 0.5 * s.snowLying);
     if (g.waterSparse) set(g.waterSparse.gain, falling * 0.8 * this.water);
     if (g.waterDense) set(g.waterDense.gain, heavy * 0.7 * this.water);
     if (g.stoneSparse) {
@@ -353,13 +389,37 @@ export class Soundscape {
     set(this.rainOut.gain, lerp(1, 0.55, this.cover));
     set(this.rainSend.gain, 0.05 + 0.45 * this.arch);
     if (g.roof) set(g.roof.gain, falling * this.cover * (0.12 + 0.45 * rain) * (s.seat ? 1.4 : 1));
+    // Autumn: the crickets from dusk till first light, hushed by the rain, louder from the bank than mid-canal and dulled
+    // under the awning; the dry leaves stirring in the gusts
+    if (g.crickets) {
+      const dusk = clamp(s.night * 1.2 + 0.6 * smoothstep(16.8, 18.2, s.hours), 0, 1);
+      set(g.crickets.gain, 0.11 * s.autumn * dusk * (1 - smoothstep(0.08, 0.4, rain)) * (1 - s.snowFall) * (0.55 + 0.6 * stone));
+      set(this.cricketLP.frequency, lerp(12000, 2500, this.cover));
+    }
+    if (g.rustle) {
+      const stir = s.autumn * (0.2 + 0.8 * s.wind) * (0.5 + vnoise(this.clock * 0.3, 5.3)) * (1 - 0.7 * smoothstep(0.1, 0.6, rain));
+      set(g.rustle.gain, 0.06 * stir);
+      set(g.leafAir.gain, 0.02 * stir);
+    }
+    // Summer: the cicadas by day while it is dry, loudest in the afternoon heat and under the trees; the frogs from
+    // dusk on and in the plum rain, loudest by the lotus, drowned out by a downpour, dulled under the awning
+    if (g.cicadas) {
+      const heat = 0.45 + 0.55 * smoothstep(10.5, 13.5, s.hours) * (1 - smoothstep(17, 19, s.hours));
+      set(g.cicadas.gain, 0.08 * s.summer * smoothstep(0.3, 0.8, s.daylight) * heat * (1 - smoothstep(0.05, 0.3, rain)) * (0.35 + 0.65 * smoothstep(45, 8, s.trees)));
+    }
+    if (g.frogs) {
+      const dusk = clamp(s.night * 1.2 + 0.7 * smoothstep(17.5, 19.5, s.hours), 0, 1);
+      const chorus = clamp(dusk + 0.35 * smoothstep(0.1, 0.4, rain) * (1 - dusk), 0, 1);
+      set(g.frogs.gain, 0.09 * s.summer * chorus * (0.6 + 0.4 * s.wet) * (1 - 0.6 * smoothstep(0.5, 1, rain)) * (0.3 + 0.7 * smoothstep(60, 12, s.pond)));
+      set(this.frogLP.frequency, lerp(9000, 2500, this.cover));
+    }
   }
 
   // Drips off the eaves (and, from the seat, off the awning's rim just in front), as many as fall in the scene
-  // (fx/drips.js): near and far, into the water or onto the stones.
+  // (fx/drips.js): near and far, into the water or onto the stones; none while it snows.
   drips(dt, s) {
     const d = this.buf.drips;
-    const act = clamp(s.rain * 1.6 + (s.wet - 0.45) * 1.3, 0, 1);
+    const act = dripActivity(s.rain, s.wet, s.snowFall);
     if (!d || act < 0.02) return;
     this.dripT -= dt * act * (s.seat ? 6 : 3);
     while (this.dripT <= 0) {

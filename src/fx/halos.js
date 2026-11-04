@@ -1,5 +1,5 @@
 // Halos: the glow a lantern makes in wet air. One soft billboard on each of the nearest lamps (the same list the
-// materials are lit by, already dimmed by the hour and flickering), wider and brighter in mist and rain, drawn
+// materials are lit by, already dimmed by the hour and flickering), wider and brighter in mist, rain and snow, drawn
 // additively over everything with the other effects. Farther lanterns get their glow from the bloom alone.
 import * as THREE from 'three';
 import { U, UNIFORMS_GLSL, MAX_LAMPS } from '../core/shared.js';
@@ -29,7 +29,7 @@ export function createHalos() {
         vec3 toEye = cameraPosition - lp.xyz;
         float d = length(toEye);
         vec3 ctr = lp.xyz + toEye / d * min(0.6, d * 0.5);
-        float wet = clamp(uMist * 0.25 + uRain * 0.9, 0.0, 1.5);
+        float wet = clamp(uMist * 0.25 + uRain * 0.9 + uSnowFall * 0.8, 0.0, 1.5);
         float size = (0.3 + 0.5 * wet) * lp.w / 3.2;
         vec3 cr = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
         vec3 cu = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);

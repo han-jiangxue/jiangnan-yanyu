@@ -4,7 +4,7 @@
 // Local frame: origin on the bank's edge at lane level, x along the bank, +z out over the water.
 import * as THREE from 'three';
 import { Kit } from './kit.js';
-import { slope } from './house.js';
+import { slope, snowLip } from './house.js';
 import { patch } from '../core/shared.js';
 import { bankX, bankNormal, BANK_Y, GATE } from './layout.js';
 
@@ -64,7 +64,13 @@ export function createGate(mats) {
   }
   kit.box('timber', 0, H - 0.02, zc, 0.5, 0.18, span + 1.1, { col: [0.36, 0.25, 0.19] });
   kit.box('ridge', 0, yr + 0.08, zc, 0.18, 0.2, Math.abs(z1 - z0) + 0.1);
+  // snow along both eaves and the ridge, drawn with the corridor's tile ends
+  const out = { lips: [] };
+  for (const sx of [-1, 1]) snowLip(kit, out, sx * xe, ye + 0.02, zc, Math.abs(z1 - z0), 'z', sx, Math.atan2(yr - ye, xe), { depth: 0.25, thick: 0.06 });
+  snowLip(kit, out, 0, yr + 0.18, zc, Math.abs(z1 - z0) + 0.1, 'z', 1, 0, { depth: 0.18, thick: 0.05, over: 0.09 });
   for (const [z, s] of [[z0, 1], [z1, -1]]) kit.box('ridge', 0, yr + 0.3, z + s * 0.12, 0.12, 0.09, 0.5, { rx: -s * 0.7 });
   const plaque = patch(new THREE.MeshStandardMaterial({ map: plaqueTexture(GATE.text), roughness: 0.8, vertexColors: true }), { key: 'plaque', wet: 0.6, gloss: 0.5 });
-  return kit.build({ ...mats, plaque }, 'gate');
+  const group = kit.build({ ...mats, plaque }, 'gate');
+  group.userData.lips = out.lips;
+  return group;
 }

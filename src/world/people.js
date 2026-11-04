@@ -133,15 +133,17 @@ export class People {
   constructor(count = 10, seed = 21) {
     const R = rng(seed);
     this.path = buildPath();
-    const body = patch(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }), { key: 'people', wet: 0.4, gloss: 0.3 });
+    // a walker carries the snow on the umbrella in under the corridor
+    const body = patch(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }), { key: 'people', wet: 0.4, gloss: 0.3, carried: true });
     const paper = patch(new THREE.MeshStandardMaterial({ map: ribTexture(), vertexColors: true, side: THREE.DoubleSide, roughness: 0.5 }), {
       key: 'umbrella',
       wet: 0.2,
       gloss: 0.6,
+      carried: true,
       // oiled paper lets the sky through: from beneath it glows its own colour
       hooks: { preLight: `if (!gl_FrontFacing) totalEmissiveRadiance += diffuseColor.rgb * (uSkyHor * 0.55 + uAmbUp * 0.2);` },
     });
-    const stickMat = patch(new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 0.7 }), { key: 'umbrella-stick', wet: 0.3, gloss: 0.4 });
+    const stickMat = patch(new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 0.7 }), { key: 'umbrella-stick', wet: 0.3, gloss: 0.4, carried: true });
     this.walkers = [];
     this.group = new THREE.Group();
     this.group.name = 'people';

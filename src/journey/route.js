@@ -1,5 +1,5 @@
-// The voyage down the canal: where it starts and ends, the chapters along it with their poems, how far the boat may
-// stray from its line, and the hours and weathers the journeys go through one after another.
+// The voyage down the canal: where it starts and ends, the chapters along it with their poems for each season, how far
+// the boat may stray from its line, and the seasons, hours and weathers the journeys go through one after another.
 import { canalX, canalSlope, canalW, BRIDGE_Z } from '../world/layout.js';
 import { lerp, smoothstep } from '../lib/math.js';
 import { SLABS } from '../world/slabbridge.js';
@@ -7,26 +7,72 @@ import { SLABS } from '../world/slabbridge.js';
 export const START_Z = 74;
 export const END_Z = -252;
 
-// a chapter begins where the boat crosses z0 (going toward -z)
+// A chapter begins where the boat crosses z0 (going toward -z). Its poem is the season's (spring's for a season that
+// has none of its own).
 export const CHAPTERS = [
-  { id: 'entry', name: '烟雨入镇', glyph: '入', z0: 74, poem: ['春水碧于天', '画船听雨眠'], by: '韦庄', from: '菩萨蛮' },
-  { id: 'corridor', name: '廊棚市河', glyph: '廊', z0: 4, poem: ['小楼一夜听春雨', '深巷明朝卖杏花'], by: '陆游', from: '临安春雨初霁' },
-  { id: 'bridge', name: '石桥烟柳', glyph: '桥', z0: -70, poem: ['沾衣欲湿杏花雨', '吹面不寒杨柳风'], by: '志南', from: '绝句' },
-  { id: 'homes', name: '枕河人家', glyph: '河', z0: -116, poem: ['君到姑苏见', '人家尽枕河', '古宫闲地少', '水港小桥多'], by: '杜荀鹤', from: '送人游吴' },
+  {
+    id: 'entry', name: '烟雨入镇', glyph: '入', z0: 74,
+    poems: {
+      spring: { lines: ['春水碧于天', '画船听雨眠'], by: '韦庄', from: '菩萨蛮' },
+      summer: { lines: ['黄梅时节家家雨', '青草池塘处处蛙', '有约不来过夜半', '闲敲棋子落灯花'], by: '赵师秀', from: '约客' },
+      autumn: { lines: ['秋阴不散霜飞晚', '留得枯荷听雨声'], by: '李商隐', from: '宿骆氏亭寄怀崔雍崔衮' },
+      winter: { lines: ['天与云与山与水', '上下一白'], by: '张岱', from: '湖心亭看雪' },
+    },
+  },
+  {
+    id: 'corridor', name: '廊棚市河', glyph: '廊', z0: 4,
+    poems: {
+      spring: { lines: ['小楼一夜听春雨', '深巷明朝卖杏花'], by: '陆游', from: '临安春雨初霁' },
+      summer: { lines: ['一川烟草', '满城风絮', '梅子黄时雨'], by: '贺铸', from: '青玉案' },
+      autumn: { lines: ['梧桐更兼细雨', '到黄昏、点点滴滴'], by: '李清照', from: '声声慢' },
+      winter: { lines: ['绿蚁新醅酒', '红泥小火炉', '晚来天欲雪', '能饮一杯无'], by: '白居易', from: '问刘十九' },
+    },
+  },
+  {
+    id: 'bridge', name: '石桥烟柳', glyph: '桥', z0: -70,
+    poems: {
+      spring: { lines: ['沾衣欲湿杏花雨', '吹面不寒杨柳风'], by: '志南', from: '绝句' },
+      summer: { lines: ['黑云翻墨未遮山', '白雨跳珠乱入船', '卷地风来忽吹散', '望湖楼下水如天'], by: '苏轼', from: '六月二十七日望湖楼醉书' },
+      autumn: { lines: ['月落乌啼霜满天', '江枫渔火对愁眠', '姑苏城外寒山寺', '夜半钟声到客船'], by: '张继', from: '枫桥夜泊' },
+      winter: { lines: ['江上晚来堪画处', '渔人披得一蓑归'], by: '郑谷', from: '雪中偶题' },
+    },
+  },
+  {
+    id: 'homes', name: '枕河人家', glyph: '河', z0: -116,
+    poems: {
+      spring: { lines: ['君到姑苏见', '人家尽枕河', '古宫闲地少', '水港小桥多'], by: '杜荀鹤', from: '送人游吴' },
+      summer: { lines: ['过雨荷花满院香', '沉李浮瓜冰雪凉'], by: '李重元', from: '忆王孙·夏词' },
+      autumn: { lines: ['君问归期未有期', '巴山夜雨涨秋池', '何当共剪西窗烛', '却话巴山夜雨时'], by: '李商隐', from: '夜雨寄北' },
+      winter: { lines: ['已讶衾枕冷', '复见窗户明', '夜深知雪重', '时闻折竹声'], by: '白居易', from: '夜雪' },
+    },
+  },
 ];
+export const poemOf = (chapter, season) => chapter.poems[season] || chapter.poems.spring;
 
-export const OPENING = { title: '江南烟雨', poem: ['南朝四百八十寺', '多少楼台烟雨中'], by: '杜牧', from: '江南春' };
+// the title page's poem, for the season of the first journey
+export const OPENINGS = {
+  spring: { lines: ['南朝四百八十寺', '多少楼台烟雨中'], by: '杜牧', from: '江南春' },
+  summer: { lines: ['接天莲叶无穷碧', '映日荷花别样红'], by: '杨万里', from: '晓出净慈寺送林子方' },
+  autumn: { lines: ['青山隐隐水迢迢', '秋尽江南草未凋'], by: '杜牧', from: '寄扬州韩绰判官' },
+  winter: { lines: ['孤舟蓑笠翁', '独钓寒江雪'], by: '柳宗元', from: '江雪' },
+};
+export const openingOf = (season) => OPENINGS[season] || OPENINGS.spring;
 
-// each journey a different hour and weather; the clock drifts on a little as the boat goes. The last goes out at
-// midnight after the rain: most of the windows going dark one by one, the drips still falling, the moon over the
-// pagoda, and its temple bell (夜半钟声到客船)
+// Each journey a different season, hour and weather, the four seasons in turn, two journeys each; the clock drifts on
+// a little as the boat goes. Spring's are drizzle in the morning and mist at first light; summer's a thunder shower in
+// the afternoon (白雨跳珠乱入船) and an evening after the rain, the fireflies over the lotus and the frogs loud;
+// autumn's a clearing evening, the low sun gold on the water and the leaves afloat as the lanterns come on, and
+// midnight in the mist with frost on the roofs, the crickets and the temple bell (夜半钟声到客船); winter's snow in
+// the morning and a heavy fall at dusk.
 export const LOOPS = [
-  { h: 8.2, w: 'drizzle' },
-  { h: 6.3, w: 'mist' },
-  { h: 14.6, w: 'after' },
-  { h: 17.5, w: 'rain' },
-  { h: 19.7, w: 'drizzle' },
-  { h: 23.1, w: 'after' },
+  { s: 'spring', h: 8.2, w: 'drizzle' },
+  { s: 'summer', h: 14.0, w: 'storm' },
+  { s: 'autumn', h: 17.6, w: 'after' },
+  { s: 'winter', h: 9.6, w: 'snow' },
+  { s: 'spring', h: 6.3, w: 'mist' },
+  { s: 'summer', h: 19.8, w: 'after' },
+  { s: 'autumn', h: 23.6, w: 'mist' },
+  { s: 'winter', h: 16.6, w: 'blizzard' },
 ];
 
 export const chapterAt = (z) => {

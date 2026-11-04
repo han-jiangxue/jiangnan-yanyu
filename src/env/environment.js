@@ -16,15 +16,24 @@ const KF = [
   { e: 1.01, zen: [0.07, 0.22, 0.58], hor: [0.6, 0.73, 0.88], sun: [6.8, 6.3, 5.7], fs: [0.9, 0.92, 0.9], fa: [0.5, 0.62, 0.8], up: [0.46, 0.58, 0.78], dn: [0.18, 0.16, 0.12], exp: 0.82 },
 ];
 
-// each weather is a set of targets, not a switch
+// each weather is a set of targets, not a switch; snow is how much falls (what lies on the ground follows it slowly)
 export const WEATHERS = {
-  mist: { cloud: 0.82, dark: 0.12, fog: 2.6, mist: 2.2, rain: 0, wet: 0.45, sun: 0.26, wind: 0.12, flash: 0 },
-  drizzle: { cloud: 0.94, dark: 0.24, fog: 2.2, mist: 1.5, rain: 0.32, wet: 1, sun: 0.09, wind: 0.22, flash: 0 },
-  rain: { cloud: 0.98, dark: 0.4, fog: 2.3, mist: 1.2, rain: 0.65, wet: 1, sun: 0.05, wind: 0.45, flash: 0 },
-  storm: { cloud: 1.0, dark: 0.6, fog: 2.9, mist: 1.3, rain: 1.0, wet: 1, sun: 0.03, wind: 1.0, flash: 1 },
-  after: { cloud: 0.62, dark: 0.06, fog: 1.4, mist: 1.2, rain: 0, wet: 0.85, sun: 0.75, wind: 0.18, flash: 0 },
+  mist: { cloud: 0.82, dark: 0.12, fog: 2.6, mist: 2.2, rain: 0, wet: 0.45, sun: 0.26, wind: 0.12, flash: 0, snow: 0 },
+  drizzle: { cloud: 0.94, dark: 0.24, fog: 2.2, mist: 1.5, rain: 0.32, wet: 1, sun: 0.09, wind: 0.22, flash: 0, snow: 0 },
+  rain: { cloud: 0.98, dark: 0.4, fog: 2.3, mist: 1.2, rain: 0.65, wet: 1, sun: 0.05, wind: 0.45, flash: 0, snow: 0 },
+  storm: { cloud: 1.0, dark: 0.6, fog: 2.9, mist: 1.3, rain: 1.0, wet: 1, sun: 0.03, wind: 1.0, flash: 1, snow: 0 },
+  after: { cloud: 0.62, dark: 0.06, fog: 1.4, mist: 1.2, rain: 0, wet: 0.85, sun: 0.75, wind: 0.18, flash: 0, snow: 0 },
+  snow: { cloud: 0.95, dark: 0.2, fog: 2.0, mist: 1.0, rain: 0, wet: 0.5, sun: 0.1, wind: 0.12, flash: 0, snow: 0.45 },
+  blizzard: { cloud: 1.0, dark: 0.42, fog: 3.0, mist: 1.1, rain: 0, wet: 0.55, sun: 0.04, wind: 0.75, flash: 0, snow: 1 },
 };
-export const WEATHER_NAMES = { mist: '薄雾', drizzle: '细雨', rain: '中雨', storm: '骤雨', after: '雨后' };
+export const WEATHER_NAMES = { mist: '薄雾', drizzle: '细雨', rain: '中雨', storm: '骤雨', after: '雨后', snow: '细雪', blizzard: '大雪' };
+
+// The seasons: an axis of their own beside the weather (any weather in any season; the journeys pair them). Each is a
+// weight in uSeason, eased from one season to the next.
+export const SEASONS = ['spring', 'summer', 'autumn', 'winter'];
+export const SEASON_NAMES = { spring: '春', summer: '夏', autumn: '秋', winter: '冬' };
+// the seasons drawn so far: all four
+export const SEASONS_READY = ['spring', 'summer', 'autumn', 'winter'];
 
 // the hour sliders' day: from half past four round to half past four the next morning, so past midnight a slider
 // reads the hour plus 24
@@ -52,6 +61,10 @@ export class Environment {
     this.hoursTarget = 9.5;
     this.weather = 'drizzle';
     this.w = { ...WEATHERS.drizzle };
+    this.season = 'spring';
+    this.sw = [1, 0, 0, 0]; // the seasons' weights, as SEASONS
+    this.snowLying = 0;
+    this.frost = 0;
     this.exposure = 1;
     this.lightning = { next: 4, flash: 0, pulses: null, t: 0 };
     this.sunVis = 1;
@@ -71,6 +84,8 @@ export class Environment {
 
   setWeather(name) { if (WEATHERS[name]) this.weather = name; }
 
+  setSeason(name) { if (SEASONS.includes(name)) this.season = name; }
+
   // shortest way round the clock, so 23h -> 1h moves forward
   setHours(h, snap = false) {
     this.hoursTarget = ((h % 24) + 24) % 24;
@@ -88,6 +103,11 @@ export class Environment {
     const k = snap ? 1 : 1 - Math.exp(-dt * 0.45);
     const tw = WEATHERS[this.weather];
     for (const key in tw) this.w[key] = lerp(this.w[key], tw[key], k);
+    // a season comes in over some seconds: the leaves fall, the snow settles
+    const ks = snap ? 1 : 1 - Math.exp(-dt * 0.35);
+    SEASONS.forEach((s, i) => { this.sw[i] = lerp(this.sw[i], s === this.season ? 1 : 0, ks); });
+    U.uSeason.value.set(this.sw[0], this.sw[1], this.sw[2], this.sw[3]);
+    const summer = this.sw[1], autumn = this.sw[2], winter = this.sw[3];
 
     const sun = sunDirAt(this.hours, this._sun);
     const moon = sunDirAt(this.hours + 12.6, this._moon);
@@ -98,6 +118,7 @@ export class Environment {
 
     // palette at this sun elevation
     const e = sun.y;
+    const night = smoothstep(0.02, -0.16, e);
     let i = 0;
     while (i < KF.length - 2 && KF[i + 1].e < e) i++;
     const a = KF[i], b = KF[i + 1];
@@ -129,11 +150,51 @@ export class Environment {
     c.sun.multiplyScalar(w.sun);
     this.exposure *= 1 + dark * 0.35;
 
-    // the moon takes over below the horizon
-    const night = smoothstep(0.02, -0.16, e);
+    // Autumn's air is drier and clearer (the haze thinner, set below): a bluer zenith where the cloud breaks, and a
+    // low sun that comes through gold, warming the haze around it
+    const clear = 1 - grey;
+    c.zen.multiply(this._t.set(1 - 0.08 * autumn * clear, 1, 1 + 0.14 * autumn * clear));
+    const golden = autumn * (1 - smoothstep(0.05, 0.4, e)) * smoothstep(-0.06, 0.02, e);
+    c.sun.multiply(this._t.set(1 + 0.3 * golden, 1 + 0.04 * golden, 1 - 0.3 * golden));
+    for (const v of [c.fs, c.hor]) v.multiply(this._t.set(1 + 0.12 * golden, 1 + 0.02 * golden, 1 - 0.12 * golden));
+    // Summer's plum rain (梅雨) is warm and close: the haze a little warmer and greener, the more so the greyer the
+    // day; where the cloud opens, the afternoon sun comes through whiter and brighter, and the nights are warm
+    const humid = summer * (0.4 + 0.6 * grey);
+    for (const v of [c.fs, c.fa]) v.multiply(this._t.set(1 + 0.02 * humid, 1 + 0.045 * humid, 1 - 0.05 * humid));
+    c.sun.multiplyScalar(1 + 0.25 * summer * clear);
+    c.up.multiplyScalar(1 + 0.08 * summer * clear);
+    c.up.multiply(this._t.set(1 + 0.05 * summer * night, 1 + 0.02 * summer * night, 1 - 0.04 * summer * night));
+
+    // Snow settles while it falls and lies on in winter's cold, melting slowly then, quickly in the other seasons and
+    // fastest in rain; and a winter town keeps the snow of the days before even when none is falling.
+    const kept = 0.6 * winter;
+    if (snap) this.snowLying = Math.max(kept, w.snow > 0.2 ? 0.75 + 0.25 * w.snow : 0);
+    else {
+      const melt = (0.002 + 0.03 * (1 - winter) + 0.03 * w.rain) * dt;
+      this.snowLying = clamp(Math.max(kept, this.snowLying + w.snow * 0.015 * dt - melt), 0, 1);
+    }
+    // Hoar frost (霜): late on a clear, still, dry night in autumn or winter it whitens what lies open to the sky, and
+    // it is gone within a couple of hours of sunrise; none on snow, in rain or under thick cloud
+    const hh = this.hours < 12 ? this.hours + 24 : this.hours;
+    const frostWant = clamp(autumn + winter, 0, 1) * smoothstep(20.5, 23.5, hh) * (1 - smoothstep(30, 32, hh))
+      * smoothstep(0.95, 0.8, w.cloud) * (1 - smoothstep(0.02, 0.15, w.rain)) * (1 - smoothstep(0.05, 0.2, w.snow)) * (1 - smoothstep(0.1, 0.4, this.snowLying));
+    this.frost = snap ? frostWant : lerp(this.frost, frostWant, 1 - Math.exp(-dt * 0.25));
+    // winter's air is colder and paler, and the snow on the ground throws light back up into the eaves and arches
+    const cold = winter * 0.7;
+    for (const v of [c.zen, c.hor, c.fs, c.fa, c.up]) v.multiply(this._t.set(1 - 0.08 * cold, 1 - 0.015 * cold, 1 + 0.06 * cold));
+    c.dn.lerp(this._t.copy(c.up).multiplyScalar(0.7), this.snowLying * 0.65);
+    this.exposure *= 1 - 0.12 * this.snowLying;
+    // and a snowy night is lighter than a rainy one: the lanterns' and the windows' light goes back and forth
+    // between the snow and the low cloud, warmed a little by them
+    const snowNight = this.snowLying * night;
+    c.up.multiplyScalar(1 + 0.6 * snowNight).add(this._t.set(0.012, 0.008, 0.004).multiplyScalar(snowNight));
+    c.dn.multiplyScalar(1 + 1.2 * snowNight);
+    for (const v of [c.zen, c.hor, c.fs, c.fa]) v.multiplyScalar(1 + 0.35 * snowNight);
+
+    // the moon takes over below the horizon (brighter through autumn's clear air)
     this.night = night;
     U.uNight.value = night;
-    const moonCol = this._moonCol.set(0.13, 0.17, 0.28).multiplyScalar(1 - w.dark * 0.8);
+    const moonCol = this._moonCol.set(0.13, 0.17, 0.28).multiplyScalar((1 - w.dark * 0.8) * (1 + 0.5 * autumn));
     const dominantSun = e > -0.06;
     // fade the key light through the swap so shadows never jump
     const swap = dominantSun ? smoothstep(-0.06, 0.0, e) : smoothstep(-0.06, -0.14, e);
@@ -152,7 +213,6 @@ export class Environment {
       ? clamp(smoothstep(-0.02, -0.13, e) + dark * 0.12 * smoothstep(0.1, -0.05, e), 0, 1)
       : clamp(smoothstep(0.12, -0.04, e) * 0.85 + smoothstep(0.05, -0.1, e) * 0.15 + dark * 0.25 * smoothstep(0.35, 0.1, e), 0, 1);
     // the town goes to bed from half past ten; the early risers light up again before five
-    const hh = this.hours < 12 ? this.hours + 24 : this.hours;
     U.uWinOff.value = smoothstep(22.3, 25.2, hh) * (1 - smoothstep(28.2, 29.4, hh));
 
     U.uSkyZen.value.copy(c.zen);
@@ -162,13 +222,18 @@ export class Environment {
     U.uAmbUp.value.copy(c.up);
     U.uAmbDown.value.copy(c.dn);
 
-    // haze per metre and the height fog's density at the water; the rain itself thickens the air
-    const fogMul = w.fog * (1 + 0.45 * w.rain);
+    // haze per metre and the height fog's density at the water; the rain itself thickens the air, as does summer's
+    // damp, and autumn's thins it
+    const clearAir = (1 - 0.25 * autumn) * (1 + 0.12 * summer);
+    const fogMul = w.fog * (1 + 0.45 * w.rain) * clearAir;
     U.uFogParams.value.set(0.0005 * fogMul, 0.0028 * fogMul, 0.05, 0);
     // dawn and dusk mist is thicker
     const lowSun = 1 - smoothstep(0.05, 0.35, Math.abs(e - 0.02));
-    U.uMist.value = w.mist * (1 + 0.8 * lowSun + 0.4 * night);
+    U.uMist.value = w.mist * (1 + 0.8 * lowSun + 0.4 * night) * clearAir;
     U.uRain.value = w.rain;
+    U.uSnowFall.value = w.snow;
+    U.uSnow.value = this.snowLying;
+    U.uFrost.value = this.frost;
     // surfaces soak quickly and dry slowly
     U.uWet.value = lerp(U.uWet.value, Math.max(w.wet, w.rain), snap ? 1 : 1 - Math.exp(-dt * (w.wet > U.uWet.value ? 0.5 : 0.06)));
     U.uWind.value.z = w.wind;

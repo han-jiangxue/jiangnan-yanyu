@@ -1,10 +1,11 @@
 // The journey's interface: the title page with its 启程, chapter cards that ink themselves in with the place's poem
-// and a seal, the scroll of the journey down the left edge, a dock of single characters for hour, weather, view and
-// the rest, the paper between journeys, a photo mode, a share link and an about sheet. The address bar holds the
-// place and, when set by hand, the hour, the weather and the view, so a copied link opens on the same moment.
+// for the season and a seal, the scroll of the journey down the left edge, a dock of single characters for season,
+// hour, weather, view and the rest, the paper between journeys, a photo mode, a share link and an about sheet. The
+// address bar holds the place and, when set by hand, the season, the hour, the weather and the view, so a copied link
+// opens on the same moment.
 // The structure (dock groups, chapter cards, photo stamp, URL sync) follows Sakura Fantasy's ui (c) 2026 Bill Chan, MIT.
-import { CHAPTERS, OPENING, progressAt } from '../journey/route.js';
-import { WEATHER_NAMES, DAY_START, dialHours } from '../env/environment.js';
+import { CHAPTERS, progressAt, poemOf, openingOf } from '../journey/route.js';
+import { WEATHER_NAMES, SEASON_NAMES, SEASONS_READY, DAY_START, dialHours } from '../env/environment.js';
 import { typingIn } from './keys.js';
 
 const $ = (tag, cls, html) => {
@@ -20,7 +21,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const NUM = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
 const SHICHEN = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
 export const shichen = (h) => SHICHEN[Math.floor(((h + 1) % 24) / 2)] + '时';
-const WEATHER_GLYPH = { mist: '雾', drizzle: '细', rain: '雨', storm: '骤', after: '霁' };
+const WEATHER_GLYPH = { mist: '雾', drizzle: '细', rain: '雨', storm: '骤', after: '霁', snow: '雪', blizzard: '霏' };
 const VIEWS = [['follow', '随', '跟随'], ['seat', '舱', '船舱'], ['cinema', '影', '电影']];
 
 export class JourneyUI {
@@ -49,9 +50,12 @@ export class JourneyUI {
   buildTitle() {
     const L = document.getElementById('load');
     this.loader = L;
-    const poem = $('div', 'opening-poem', OPENING.poem.map((l) => `<div class="line">${l}</div>`).join('') + `<div class="by">${OPENING.by}《${OPENING.from}》</div>`);
+    // the poem of the season the first journey sets out in
+    const op = openingOf(this.app.env.season);
+    const poem = $('div', 'opening-poem', op.lines.map((l) => `<div class="line">${l}</div>`).join('') + `<div class="by">${op.by}《${op.from}》</div>`);
     this.go = $('button', 'go', '<span class="seal">启</span><span class="lbl">启程</span>');
-    this.hint = $('div', 'go-hint', '点击或按回车，撑船入镇 · 有雨声');
+    // sound starts muted: say where it is
+    this.hint = $('div', 'go-hint', '点击或按回车，撑船入镇 · 按 M 听雨');
     L.appendChild(poem);
     L.appendChild(this.go);
     L.appendChild(this.hint);
@@ -112,11 +116,12 @@ export class JourneyUI {
     clearTimeout(this.cardTimer);
     const card = $('div', 'chapter');
     const t0 = 0.3;
+    const p = poemOf(c, this.app.env.season), n = p.lines.length;
     card.innerHTML = `
       <div class="num">${chars('第' + NUM[idx] + '景', t0, 0.1)}</div>
       <div class="name">${chars(c.name, t0 + 0.4, 0.18)}</div>
-      <div class="poem">${c.poem.map((l, i) => `<div class="line">${chars(l, t0 + 1.4 + i * 0.8, 0.07)}</div>`).join('')}</div>
-      <div class="by"><span class="who">${chars(c.by, t0 + 1.6 + c.poem.length * 0.8, 0.12)}</span><span class="from">${chars('《' + c.from + '》', t0 + 1.9 + c.poem.length * 0.8, 0.06)}</span><span class="seal" style="animation-delay:${(t0 + 2.6 + c.poem.length * 0.8).toFixed(2)}s">${c.glyph}</span></div>`;
+      <div class="poem">${p.lines.map((l, i) => `<div class="line">${chars(l, t0 + 1.4 + i * 0.8, 0.07)}</div>`).join('')}</div>
+      <div class="by"><span class="who">${chars(p.by, t0 + 1.6 + n * 0.8, 0.12)}</span><span class="from">${chars('《' + p.from + '》', t0 + 1.9 + n * 0.8, 0.06)}</span><span class="seal" style="animation-delay:${(t0 + 2.6 + n * 0.8).toFixed(2)}s">${c.glyph}</span></div>`;
     this.root.appendChild(card);
     this.card = card;
     // a timer rather than the next animation frame: the card must ink in even while a heavy frame is still drawing
@@ -192,6 +197,10 @@ export class JourneyUI {
     };
     const sep = () => d.appendChild($('div', 'sep'));
 
+    const rs = grp('季');
+    this.seasonBtns = SEASONS_READY.map((k) => [k, btn(rs, SEASON_NAMES[k], SEASON_NAMES[k] + '天', () => app.setSeason(k))]);
+    this.autoSeason = btn(rs, '自', '随行程', () => app.setAutoSeason(!app.ctl.autoSeason), 'auto');
+    sep();
     const rt = grp('时');
     const time = $('div', 'time');
     this.slider = $('input');
@@ -250,7 +259,7 @@ export class JourneyUI {
     this.about = $('div', 'about');
     this.about.innerHTML = `<div class="sheet"><button class="x" aria-label="关闭">✕</button>
       <h2>江南烟雨</h2>
-      <p>撑一只乌篷船，在细雨里穿过一座江南水乡：烟雨入镇，廊棚市河，石桥烟柳，枕河人家。每一程换一个时辰、一种天气。</p>
+      <p>撑一只乌篷船，在细雨里穿过一座江南水乡：烟雨入镇，廊棚市河，石桥烟柳，枕河人家。每一程换一个季节、时辰和天气。</p>
       <p>three.js 实时渲染，房屋、桥、船、柳树、行人都由代码生成；雨声、滴水、橹声、雷声和钟声也是 Web Audio 实时合成的。实现思路参考 <a href="https://github.com/billpwchan/sakura-fantasy" target="_blank" rel="noopener">Sakura Fantasy</a>（MIT）；贴图与道具模型来自 <a href="https://polyhaven.com" target="_blank" rel="noopener">Poly Haven</a>（CC0）。诗句：杜牧、韦庄、陆游、志南、杜荀鹤。</p>
       <div class="keys"><b>W / S</b><span>快一些，慢一些</span><b>A / D</b><span>掌舵</span><b>拖动 · 滚轮</b><span>环顾，远近</span><b>C</b><span>跟随、船舱、电影</span><b>空格</b><span>停船或启程</span><b>P · H</b><span>拍照，隐藏界面</span><b>M</b><span>声音开关</span></div>
       <div class="seal">烟雨</div></div>`;
@@ -373,7 +382,7 @@ export class JourneyUI {
     try {
       const url = this.app.shareUrl(true);
       const q = new URL(url).searchParams;
-      const key = ['h', 'w', 'mode', 'j'].map((k) => q.get(k)).join('|');
+      const key = ['s', 'h', 'w', 'mode', 'j'].map((k) => q.get(k)).join('|');
       if (url === location.href || now - this.urlAt < (key === this.urlKey ? 3000 : 1000)) return;
       this.urlKey = key;
       this.urlAt = now;
@@ -395,6 +404,8 @@ export class JourneyUI {
     this.clock.firstChild.textContent = shichen(h);
     this.clock.lastChild.textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
     this.weatherBtns.forEach(([k, b]) => b.classList.toggle('on', k === env.weather));
+    this.seasonBtns.forEach(([k, b]) => b.classList.toggle('on', k === env.season));
+    this.autoSeason.classList.toggle('on', ctl.autoSeason);
     this.autoTime.classList.toggle('on', ctl.autoTime);
     this.autoWeather.classList.toggle('on', ctl.autoWeather);
     this.viewBtns.forEach(([k, b]) => b.classList.toggle('on', k === director.mode));

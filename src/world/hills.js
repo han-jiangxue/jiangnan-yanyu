@@ -47,7 +47,7 @@ function pagoda() {
 }
 
 export function createHills() {
-  const pos = [];
+  const pos = [], ridge = [];
   const N = 480;
   RINGS.forEach((ring, i) => {
     for (let k = 0; k < N; k++) {
@@ -56,27 +56,34 @@ export function createHills() {
       const h0 = ridgeHeight(ring, i, t0), h1 = ridgeHeight(ring, i, t1);
       const a = p(t0, -40), b = p(t1, -40), c = p(t1, h1), d = p(t0, h0);
       pos.push(...a, ...b, ...c, ...a, ...c, ...d);
+      // each column's ridge height, for the winter snow along it
+      ridge.push(h0, h1, h1, h0, h1, h0);
     }
   });
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('aRidge', new THREE.Float32BufferAttribute(ridge, 1));
   g.computeVertexNormals();
-  // the pagoda on its hill
+  // the pagoda on its hill (no ridge over it: never snowed white)
   const r0 = RINGS[0];
   const px = CENTRE.x + Math.cos(PAGODA_TH) * r0.r, pz = CENTRE.z + Math.sin(PAGODA_TH) * r0.r;
   const pg = pagoda();
   pg.translate(px, ridgeHeight(r0, 0, PAGODA_TH) - 4, pz);
   pg.deleteAttribute('uv');
+  pg.setAttribute('aRidge', new THREE.Float32BufferAttribute(new Float32Array(pg.attributes.position.count).fill(1e4), 1));
   const geo = mergeGeometries([g, pg]);
 
   const mat = new THREE.ShaderMaterial({
     uniforms: { ...U },
     side: THREE.DoubleSide,
     vertexShader: /* glsl */ `
-      varying vec3 vWP;
+      attribute float aRidge;
+      varying vec3 vWP; varying float vRidge, vUp;
       void main(){
         vec4 wp = modelMatrix * vec4(position, 1.0);
         vWP = wp.xyz;
+        vRidge = aRidge;
+        vUp = normal.y;
         gl_Position = projectionMatrix * viewMatrix * wp;
       }`,
     fragmentShader: /* glsl */ `
@@ -84,10 +91,15 @@ export function createHills() {
       ${UNIFORMS_GLSL}
       ${NOISE}
       ${ATMOS}
-      varying vec3 vWP;
+      varying vec3 vWP; varying float vRidge, vUp;
       void main(){
         // ink, a little uneven, as a brush leaves it
         vec3 col = vec3(0.04, 0.047, 0.045) * (0.85 + 0.3 * sfNoise(vWP.xz * 0.012 + vWP.y * 0.02));
+        // in winter (or under a fresh fall) the ridges are white a ragged way down, where an ink painting leaves the
+        // paper bare, and so is every tier of the pagoda's eaves
+        float white = max(uSeason.w, uSnow);
+        float cap = white * max(smoothstep(9.0 + 9.0 * sfNoise(vWP.xz * 0.02), 2.0, vRidge - vWP.y), smoothstep(0.35, 0.75, vUp));
+        col = mix(col, uAmbUp * 1.1 + 0.01, cap * 0.85);
         gl_FragColor = vec4(sfAtmos(col, vWP), 1.0);
       }`,
   });

@@ -9,9 +9,9 @@ const small = Math.min(screen.width, screen.height) < 900;
 const name = asked === 'low' || asked === 'high' || asked === 'mobile' ? asked : coarse && small ? 'mobile' : 'high';
 
 const TIERS = {
-  high: { msaa: 4, shadows: true, shadowSize: 2048, reflScale: 0.5, bloomLevels: 6, rain: 16000, dprCap: 2, governor: true },
-  mobile: { msaa: 0, shadows: true, shadowSize: 1024, reflScale: 0.35, bloomLevels: 4, rain: 8000, dprCap: 1.5, governor: true },
-  low: { msaa: 0, shadows: false, shadowSize: 1024, reflScale: 0.35, bloomLevels: 4, rain: 6000, dprCap: 1, governor: false },
+  high: { msaa: 4, shadows: true, shadowSize: 2048, reflScale: 0.5, bloomLevels: 6, rain: 16000, snow: 9000, leaves: 1200, splash: 1500, fireflies: 700, dprCap: 2, governor: true },
+  mobile: { msaa: 0, shadows: true, shadowSize: 1024, reflScale: 0.35, bloomLevels: 4, rain: 8000, snow: 5000, leaves: 700, splash: 900, fireflies: 400, dprCap: 1.5, governor: true },
+  low: { msaa: 0, shadows: false, shadowSize: 1024, reflScale: 0.35, bloomLevels: 4, rain: 6000, snow: 4000, leaves: 500, splash: 600, fireflies: 300, dprCap: 1, governor: false },
 };
 
 const scale = parseFloat(params.get('scale') || '1');

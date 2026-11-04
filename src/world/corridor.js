@@ -5,7 +5,7 @@
 // bank, +z out over the water.
 import * as THREE from 'three';
 import { Kit } from './kit.js';
-import { slope, lanternGeometry, FRAME_COL, TIMBER_COL, WOOD_COL } from './house.js';
+import { slope, snowLip, lanternGeometry, FRAME_COL, TIMBER_COL, WOOD_COL } from './house.js';
 import { TILE_PITCH, COVER_FRAC } from './materials.js';
 import { latticeUv } from './textures.js';
 import { bankX, bankNormal, canalSlope, BANK_Y, LANE_W, CORRIDOR } from './layout.js';
@@ -27,6 +27,8 @@ function bay(kit, len, last, out) {
   slope(kit, 'tile', [x0 - 0.01, Y_BACK, Z_BACK], [x1 + 0.01, Y_BACK, Z_BACK], [x0 - 0.01, Y_FRONT, Z_FRONT], [x1 + 0.01, Y_FRONT, Z_FRONT], { span: [-1, -1], spanRaw: true });
   slope(kit, 'timber', [x0, Y_BACK - 0.08, Z_BACK], [x1, Y_BACK - 0.08, Z_BACK], [x0, Y_FRONT - 0.08, Z_FRONT], [x1, Y_FRONT - 0.08, Z_FRONT], { down: true, col: FRAME_COL });
   kit.box('timber', 0, Y_FRONT - 0.1, Z_FRONT, len + 0.02, 0.12, 0.04, { col: FRAME_COL });
+  // the snow along its eave, over the water
+  snowLip(kit, out, 0, Y_FRONT + 0.03, Z_FRONT, len, 'x', 1, ang);
   // rafters, and the front beam on the posts
   for (let x = x0 + 0.25; x < x1 - 0.1; x += 0.55) {
     const zm = (Z_FRONT + Z_BACK) / 2;
@@ -73,7 +75,7 @@ function bay(kit, len, last, out) {
 export function createCorridor(mats) {
   const { side, z0, z1 } = CORRIDOR;
   const kit = new Kit();
-  const out = { lamps: [], caps: [], drips: [], dripPoints: [] };
+  const out = { lamps: [], caps: [], drips: [], dripPoints: [], lips: [] };
   let z = z0;
   let U = 0;
   while (z > z1 + 0.5) {

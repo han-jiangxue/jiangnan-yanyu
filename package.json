@@ -12,7 +12,8 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 5193",
     "fetch-assets": "node scripts/fetch-assets.mjs",
-    "capture": "node scripts/capture.mjs"
+    "capture": "node scripts/capture.mjs",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "three": "^0.186.1"

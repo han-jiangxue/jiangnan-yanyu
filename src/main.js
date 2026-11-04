@@ -7,7 +7,7 @@ import { U } from './core/shared.js';
 import { QUALITY } from './core/quality.js';
 import { Pipeline } from './core/pipeline.js';
 import { loadTextures } from './core/assets.js';
-import { Environment, WEATHERS, WEATHER_NAMES } from './env/environment.js';
+import { Environment, WEATHERS, WEATHER_NAMES, SEASONS_READY, SEASON_NAMES } from './env/environment.js';
 import { createMaterials } from './world/materials.js';
 import { createSky } from './world/sky.js';
 import { createWater } from './world/water.js';
@@ -19,17 +19,21 @@ import { createCorridor } from './world/corridor.js';
 import { createGate } from './world/gate.js';
 import { createHills } from './world/hills.js';
 import { planWillows, createWillows } from './world/willow.js';
-import { Boat, BoatTraffic } from './world/boat.js';
+import { Boat, BoatTraffic, awningSplashPoints } from './world/boat.js';
 import { People } from './world/people.js';
 import { createCloth } from './world/cloth.js';
 import { loadProps, createProps } from './world/props.js';
-import { createPlants } from './world/plants.js';
+import { createPlants, PONDS } from './world/plants.js';
 import { canalX, canalSlope, bankX, bankNormal, BRIDGE_Z, BANK_Y, CORRIDOR, CORE, nearSlabBridge } from './world/layout.js';
 import { RainOcclusion } from './core/occlusion.js';
 import { createRain } from './fx/rain.js';
-import { createDrips } from './fx/drips.js';
+import { createDrips, dripActivity } from './fx/drips.js';
 import { createMist } from './fx/mist.js';
 import { createHalos } from './fx/halos.js';
+import { createSnow } from './fx/snow.js';
+import { createLeaves } from './fx/leaves.js';
+import { createSplash } from './fx/splash.js';
+import { createFireflies } from './fx/fireflies.js';
 import { Soundscape } from './audio/soundscape.js';
 import { CameraRig } from './journey/camera.js';
 import { Director } from './journey/director.js';
@@ -52,11 +56,12 @@ const want = {
   z: num('z', END_Z, START_Z),
   h: num('h', 0, 24),
   w: WEATHERS[params.get('w')] ? params.get('w') : null,
+  s: SEASONS_READY.includes(params.get('s')) ? params.get('s') : null,
   mode: ['follow', 'seat', 'cinema'].includes(params.get('mode')) ? params.get('mode') : null,
   loop: num('j', 0, 999),
 };
 // any moment set in the URL goes straight in, without the title page
-const direct = !review && [want.z, want.h, want.w, want.mode].some((v) => v !== null) && !params.has('intro');
+const direct = !review && [want.z, want.h, want.w, want.s, want.mode].some((v) => v !== null) && !params.has('intro');
 const loadEl = document.getElementById('load');
 const loadBar = loadEl.querySelector('.bar i');
 const loadMsg = loadEl.querySelector('.m');
@@ -142,15 +147,28 @@ async function boot() {
   console.log(`[jn] town: ${JSON.stringify(town.userData.stats)} in ${(performance.now() - t0).toFixed(0)}ms`);
   const corridor = createCorridor(mats);
   scene.add(corridor);
-  const corridorEnds = tileEnds(corridor.userData.caps, corridor.userData.drips);
+  const gate = createGate(mats);
+  scene.add(gate);
+  // the corridor's tile ends, and the snow along its eave and the gate's
+  const corridorEnds = tileEnds(corridor.userData.caps, corridor.userData.drips, [...corridor.userData.lips, ...gate.userData.lips]);
   scene.add(corridorEnds);
-  scene.add(createGate(mats));
   scene.add(createHills());
   progress(0.62, '正在种柳');
   await tick();
-  scene.add(createWillows(mats, planWillows(banks.userData.piers)));
+  const willows = createWillows(mats, planWillows(banks.userData.piers));
+  scene.add(willows);
+  // the maples' red leaves float near them
+  willows.userData.crowns.filter((c) => c.kind === 1).slice(0, 6).forEach((c, i) => water.uniforms.uMaples.value[i].set(c.x, c.z, c.r, 0));
   const rain = createRain(QUALITY.rain);
   scene.add(rain.mesh);
+  const snow = createSnow(QUALITY.snow);
+  scene.add(snow.mesh);
+  const leaves = createLeaves(QUALITY.leaves, willows.userData.crowns, water.uniforms.tCanal.value);
+  scene.add(leaves.mesh);
+  const splash = createSplash(QUALITY.splash, water.uniforms.tCanal.value, awningSplashPoints());
+  scene.add(splash.mesh);
+  const fireflies = createFireflies(QUALITY.fireflies, willows.userData.crowns, PONDS);
+  scene.add(fireflies.mesh);
   const drips = createDrips([...town.userData.dripPoints, ...corridor.userData.dripPoints]);
   scene.add(drips.mesh);
   const mist = createMist();
@@ -191,7 +209,8 @@ async function boot() {
   scene.add(people.group);
   scene.add(createCloth(mats, lots));
   scene.add(createProps(propSrc, lots, banks.userData.piers));
-  scene.add(createPlants(mats, lots, banks.userData.piers));
+  const plants = createPlants(mats, lots, banks.userData.piers);
+  scene.add(plants);
 
   const sun = new THREE.DirectionalLight(0xffffff, 1);
   sun.castShadow = QUALITY.shadows;
@@ -208,7 +227,7 @@ async function boot() {
 
   // ------------------------------------------------------------ the journey, the camera, the controls
   const journey = new Journey();
-  const ctl = { autoTime: want.h === null, autoWeather: want.w === null, started: review, captures: [], turning: false };
+  const ctl = { autoTime: want.h === null, autoWeather: want.w === null, autoSeason: want.s === null, started: review, captures: [], turning: false };
   const preset = () => LOOPS[journey.loop % LOOPS.length];
   if (want.loop !== null) journey.loop = Math.floor(want.loop);
   if (want.z !== null) journey.jump(want.z, true);
@@ -228,18 +247,21 @@ async function boot() {
     setAutoTime(on) { ctl.autoTime = on; },
     setWeather(w) { ctl.autoWeather = false; env.setWeather(w); if (panel) panel.sync(); },
     setAutoWeather(on) { ctl.autoWeather = on; },
+    setSeason(s) { ctl.autoSeason = false; env.setSeason(s); if (panel) panel.sync(); },
+    setAutoSeason(on) { ctl.autoSeason = on; },
     togglePause() { journey.togglePause(); },
     // sound on or off, from the dock or M; the click or the key that asks is the gesture that lets it start
     toggleSound() { return sound.toggle(); },
     // a photograph of the next frame drawn; several asked for before it is drawn all get that one
     capture() { return new Promise((res) => { ctl.captures.push(res); }); },
-    // the address of this moment: the place always; the hour, the weather and the view only when chosen by hand.
-    // The address bar also keeps this device's own settings (quality, scale, interface), a shared link does not.
+    // the address of this moment: the place always; the season, the hour, the weather and the view only when chosen
+    // by hand. The address bar also keeps this device's own settings (quality, scale, interface), a shared link does not.
     shareUrl(own = false) {
       const q = new URLSearchParams();
       q.set('z', String(Math.round(journey.z)));
-      // which journey it is, for the hour and the weather that journey has
+      // which journey it is, for the season, the hour and the weather that journey has
       if (journey.loop > 0) q.set('j', String(journey.loop));
+      if (!ctl.autoSeason) q.set('s', env.season);
       if (!ctl.autoTime) q.set('h', env.hoursTarget.toFixed(1));
       if (!ctl.autoWeather) q.set('w', env.weather);
       if (director && director.mode !== 'follow' && director.mode !== 'photo') q.set('mode', director.mode);
@@ -263,13 +285,16 @@ async function boot() {
     },
   };
 
-  // the end of a journey: the paper comes down, the next hour and weather, and the boat sets off again at the town gate
+  // the end of a journey: the paper comes down with the next season, hour and weather (those set by hand stay), and the
+  // boat sets off again at the town gate
   journey.onEnd = async () => {
     if (ctl.turning) return;
     ctl.turning = true;
     const next = LOOPS[(journey.loop + 1) % LOOPS.length];
-    await ui.paper(true, `第${cnum(((journey.loop + 1) % 99) + 1)}程<small>${shichen(next.h)} · ${WEATHER_NAMES[next.w]}</small>`);
+    const s = ctl.autoSeason ? next.s : env.season, h = ctl.autoTime ? next.h : env.hoursTarget, w = ctl.autoWeather ? next.w : env.weather;
+    await ui.paper(true, `第${cnum(((journey.loop + 1) % 99) + 1)}程<small>${SEASON_NAMES[s]} · ${shichen(h)} · ${WEATHER_NAMES[w]}</small>`);
     journey.reset(journey.loop + 1);
+    if (ctl.autoSeason) env.setSeason(next.s);
     if (ctl.autoTime) env.setHours(next.h, true);
     if (ctl.autoWeather) env.setWeather(next.w);
     env.update(0, true);
@@ -279,6 +304,8 @@ async function boot() {
   };
   journey.onChapter = (i) => { if (ui) ui.chapter(i); };
 
+  if (want.s) env.setSeason(want.s);
+  else if (!review) env.setSeason(preset().s);
   if (want.h !== null) env.setHours(want.h, true);
   else if (!review) env.setHours(preset().h, true);
   if (want.w) env.setWeather(want.w);
@@ -421,7 +448,9 @@ async function boot() {
 
   const state = { frames: 0, ready: false, fps: 60 };
   // what the soundscape is told each frame; the boats with a boatman at the oar are the ones it listens to
-  const heard = { live: false, veil: false, rain: 0, wet: 0, wind: 0, hours: 0, storm: false, seat: false, boats: [player, ...moving] };
+  const heard = { live: false, veil: false, rain: 0, wet: 0, wind: 0, hours: 0, night: 0, daylight: 1, storm: false, snowFall: 0, snowLying: 0, summer: 0, autumn: 0, trees: 1e9, pond: 1e9, seat: false, boats: [player, ...moving] };
+  // the lotus stretches as segments along their banks, for how far the frogs are
+  const pondLines = PONDS.map(([z0, z1, side]) => { const z = (z0 + z1) / 2, n = bankNormal(z, side); return { x: bankX(z, side) - n.x * 1.5, z0, z1 }; });
   let last = performance.now();
   let clockT = 0;
   // ?warm=seconds: run the boats and the people that long before the first frame (wakes need a track behind them)
@@ -429,7 +458,7 @@ async function boot() {
   for (let t = 0; t < warm; t += 0.1) {
     clockT += 0.1;
     traffic.update(0.1, clockT);
-    people.update(0.1, clockT, U.uRain.value);
+    people.update(0.1, clockT, Math.max(U.uRain.value, U.uSnowFall.value));
     if (direct) { journey.update(0.1); trackPlayerWake(0.1, clockT); }
   }
   let perfT = 0;
@@ -453,15 +482,31 @@ async function boot() {
     // the hour and the weather follow the journey unless set by hand; the clock drifts on as the boat goes
     if (!review && ctl.autoTime && !ctl.turning) env.setHours(preset().h + journey.progress * 0.8);
     if (!review && ctl.autoWeather && !ctl.turning) env.setWeather(preset().w);
+    if (!review && ctl.autoSeason && !ctl.turning) env.setSeason(preset().s);
     env.update(dt);
     traffic.update(dt, clockT);
     for (const b of moored) b.update(clockT, b.pose);
-    people.update(dt, clockT, U.uRain.value);
+    // umbrellas go up in the snow as in the rain
+    people.update(dt, clockT, Math.max(U.uRain.value, U.uSnowFall.value));
     if (rig) rig.update(dt);
     else director.update(dt, journey.pose, player.root);
     camera.updateMatrixWorld();
     feedWakes(camera.position);
     rain.update(camera);
+    snow.update(camera);
+    // nothing falling, nothing drawn: the rain, the snow and the drips each run their thousands of instances through
+    // the vertex shader only to throw every one away
+    rain.mesh.visible = U.uRain.value > 0.005;
+    snow.mesh.visible = U.uSnowFall.value > 0.005;
+    drips.mesh.visible = dripActivity(U.uRain.value, U.uWet.value, U.uSnowFall.value) > 0.01;
+    leaves.mesh.visible = U.uSeason.value.z > 0.01;
+    if (leaves.mesh.visible) leaves.update(camera);
+    // a downpour's splashes, some on your own boat's awnings
+    splash.mesh.visible = U.uRain.value > 0.45;
+    if (splash.mesh.visible) splash.update(camera, review ? null : player.root);
+    fireflies.mesh.visible = U.uSeason.value.y > 0.01 && U.uNight.value > 0.25 && U.uRain.value < 0.2 && U.uSnowFall.value < 0.1;
+    plants.userData.update(camera.position);
+    willows.userData.update();
     town.userData.update(camera.position);
     town.userData.ends.userData.update(camera.position);
     corridorEnds.userData.update(camera.position);
@@ -500,8 +545,12 @@ async function boot() {
     occ.update(renderer, scene, camera);
     Object.assign(heard, {
       live: review || ctl.started, veil: ctl.turning, rain: U.uRain.value, wet: U.uWet.value, wind: U.uWind.value.z,
-      hours: env.hours, storm: env.weather === 'storm', seat: !!director && director.mode === 'seat',
+      hours: env.hours, night: env.night, daylight: env.daylight, storm: env.weather === 'storm', snowFall: U.uSnowFall.value, snowLying: U.uSnow.value,
+      summer: env.sw[1], autumn: env.sw[2], seat: !!director && director.mode === 'seat',
     });
+    const cp = camera.position;
+    heard.trees = Math.min(...willows.userData.crowns.map((c) => Math.hypot(c.x - cp.x, c.z - cp.z)));
+    heard.pond = Math.min(...pondLines.map((p) => Math.hypot(cp.x - p.x, Math.max(0, p.z1 - cp.z, cp.z - p.z0))));
     sound.update(dt, camera, heard);
 
     const cu = pipe.post.composite.uniforms;
@@ -538,7 +587,8 @@ async function boot() {
       else ui.ready().then(() => { ctl.started = true; });
     }
   }
-  window.jiangnan = { app, env, rig, director, journey, pipe, scene, camera, U, lots, state, player, sound };
+  // (the seasons and weathers there are, for scripts/smoke.mjs)
+  window.jiangnan = { app, env, rig, director, journey, pipe, scene, camera, U, lots, state, player, sound, seasons: SEASONS_READY, weathers: Object.keys(WEATHERS) };
   window.__jn = state;
   player.update(0, journey.pose);
   if (director) director.update(0, journey.pose, player.root);

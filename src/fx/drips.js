@@ -6,7 +6,11 @@ import * as THREE from 'three';
 import { U, UNIFORMS_GLSL, NOISE, ATMOS, MAX_LAMPS } from '../core/shared.js';
 import { LAYER_FX } from '../core/pipeline.js';
 import { inCanal, BANK_Y, WATER_Y } from '../world/layout.js';
-import { rng } from '../lib/math.js';
+import { rng, clamp, smoothstep } from '../lib/math.js';
+
+// How busy the drips are, 0..1, worked out as the shader below does: in the rain, and a while after it as long as the
+// roofs are wet, but not while it snows. (The soundscape's drips and whether the drips are drawn at all follow it.)
+export const dripActivity = (rain, wet, snowFall) => clamp(rain * 1.6 + (wet - 0.45) * 1.3, 0, 1) * (1 - smoothstep(0.05, 0.4, snowFall));
 
 export function createDrips(points, max = 3200) {
   // thin out to the budget, evenly
@@ -57,8 +61,8 @@ function dripMesh(list, name, seed, width) {
       uniform float uDropW;
       varying vec2 vUv; varying vec3 vWP; varying float vAlpha, vSplash;
       void main(){
-        // drips go on a while after the rain stops, as long as the roofs are wet
-        float act = clamp(uRain * 1.6 + (uWet - 0.45) * 1.3, 0.0, 1.0);
+        // drips go on a while after the rain stops, as long as the roofs are wet, but not while it snows
+        float act = clamp(uRain * 1.6 + (uWet - 0.45) * 1.3, 0.0, 1.0) * (1.0 - smoothstep(0.05, 0.4, uSnowFall));
         if (aS.z > act) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
         float T = mix(3.2, 0.75, act) * aS.x; // seconds between drops from one tile
         float h = aP.w;

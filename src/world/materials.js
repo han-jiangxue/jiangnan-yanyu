@@ -168,15 +168,16 @@ export function createMaterials(tex) {
           c *= mix(0.84, 1.18, jnCover);
           // lichen and soot in the channels, where the water runs
           c = mix(c, vec3(0.06, 0.075, 0.05), (1.0 - jnCover) * 0.3);
-          // each tile's lower lip overhangs the next: a dark line
+          // each tile's lower lip overhangs the next: a dark line (filled in and gone under snow)
           float lip = smoothstep(0.8, 0.97, jnF);
-          c *= 1.0 - 0.5 * lip * (1.0 - smoothstep(0.25, 0.7, jnFw));
+          c *= 1.0 - 0.5 * lip * (1.0 - smoothstep(0.25, 0.7, jnFw)) * (1.0 - smoothstep(0.15, 0.6, uSnow));
           // the shade a cover row casts on the channel beside it
           float side = smoothstep(JCF, JCF + 0.08, jnT) * (1.0 - smoothstep(JCF + 0.08, JCF + 0.2, jnT)) + smoothstep(0.92, 1.0, jnT);
           c *= 1.0 - 0.35 * side * (1.0 - smoothstep(0.3, 0.8, jnFwU));
-          // moss blotches
+          // moss blotches (greener in summer, browner and duller in autumn and winter)
           float moss = smoothstep(0.58, 0.82, sfNoise(vec2(jnU, jnV) * 0.7 + 5.0)) * mix(1.0, 0.4, jnCover);
-          c = mix(c, vec3(0.055, 0.075, 0.04), moss * 0.55);
+          vec3 mossC = mix(vec3(0.055, 0.075, 0.04), vec3(0.045, 0.09, 0.03), uSeason.y * 0.7);
+          c = mix(c, mix(mossC, vec3(0.06, 0.056, 0.036), clamp(uSeason.z * 0.7 + uSeason.w * 0.8, 0.0, 1.0)), moss * 0.55);
           // where rows and courses fall under a pixel, their average
           vec3 avg = vec3(0.08, 0.082, 0.087) * (0.75 + 0.7 * grime);
           c = mix(c, avg, smoothstep(0.35, 0.9, max(jnFw, jnFwU * 0.6)));
@@ -192,7 +193,8 @@ export function createMaterials(tex) {
             vec3 Bv = normalize((dpy * dux.x - dpx * duy.x) / det); // down the slope
             vec3 nW = inverseTransformDirection(normal, viewMatrix);
             // each tile lies steeper than the deck, and its rounded lip faces down the slope
-            float tilt = (0.12 + 0.8 * smoothstep(0.84, 0.98, jnF)) * (1.0 - smoothstep(0.25, 0.7, jnFw));
+            // (snow fills the steps from one course to the next and leaves the slope smooth)
+            float tilt = (0.12 + 0.8 * smoothstep(0.84, 0.98, jnF)) * (1.0 - smoothstep(0.25, 0.7, jnFw)) * (1.0 - 0.85 * smoothstep(0.15, 0.6, uSnow));
             // flat stand-in roofs (span flag -1) carry the rows in the normal instead of the geometry
             float dh = 0.0;
             if (vSpan.x < -0.5) {
@@ -204,6 +206,11 @@ export function createMaterials(tex) {
             normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);
           }
         }`,
+      // snow fills the channels first and covers the rows of covers last, so a light fall leaves the roof striped
+      // white and black (白雪黑瓦); where the rows fall under a pixel, their average, or the stripes shimmer
+      snow: /* glsl */ `
+        float jnCK = 0.25 + 0.75 * smoothstep(0.45, 0.95, uSnow);
+        sfSnowK *= mix(mix(1.0, jnCK, jnCover), mix(1.0, jnCK, JCF), smoothstep(0.3, 0.8, jnFwU));`,
     },
   });
 
@@ -216,13 +223,14 @@ export function createMaterials(tex) {
     },
   });
 
-  // waterline: damp below ~0.9 m, a green-black skin where the water laps, moss creeping from the joints
+  // waterline: damp below ~0.9 m, a green-black skin where the water laps, moss creeping from the joints (greener in
+  // summer, browner and duller in autumn and winter)
   const WATERLINE = /* glsl */ `
     float wy = vSfWP.y;
     c *= mix(1.0, 0.5, smoothstep(0.95, 0.1, wy));
     c = mix(c, c * vec3(0.7, 0.95, 0.68), smoothstep(0.45, -0.1, wy) * 0.8);
     float moss = smoothstep(0.6, 0.85, sfNoise(vSfWP.xz * 0.9 + vSfWP.y * 1.3)) * smoothstep(2.4, 0.5, wy);
-    c = mix(c, vec3(0.07, 0.09, 0.045), moss * 0.5);
+    c = mix(c, mix(mix(vec3(0.07, 0.09, 0.045), vec3(0.055, 0.1, 0.038), uSeason.y * 0.7), vec3(0.072, 0.068, 0.045), clamp(uSeason.z * 0.7 + uSeason.w * 0.8, 0.0, 1.0)), moss * 0.5);
   `;
   const stone = mk('stone', { ...T('granite_wall'), roughness: 0.88 }, {
     wet: 0.9,
@@ -260,8 +268,30 @@ export function createMaterials(tex) {
             // puddles in the low spots only: about a fifth of the paving when soaked
             float level = 0.76 - 0.1 * uWet;
             jnPud = smoothstep(level, level + 0.07, n) * smoothstep(0.1, 0.6, uWet) * sfSkyExposure(vSfWP);
+            // and none under the snow
+            jnPud *= 1.0 - smoothstep(0.1, 0.45, uSnow);
           }
           c *= 1.0 - 0.45 * jnPud;
+          // Fallen leaves in autumn, one at most in each cell of a grid on the paving: more of them under the eaves and
+          // the corridor's roof, where the wind leaves them, and over a puddle they lie on top
+          if (uSeason.z > 0.001 && fn.y > 0.92) {
+            vec2 cell = floor(vSfWP.xz / 0.3);
+            float sheltered = smoothstep(0.2, 0.6, sfOccHeight(vSfWP.xz) - vSfWP.y);
+            if (sfHash12(cell * 1.31 + 7.7) < uSeason.z * (0.08 + 0.3 * sheltered)) {
+              float h2 = sfHash12(cell + 2.9), h3 = sfHash12(cell + 5.3), h4 = sfHash12(cell + 8.1);
+              vec2 q = vSfWP.xz - (cell + 0.3 + 0.4 * vec2(h2, h3)) * 0.3;
+              float ang = h4 * 6.2832, ca = cos(ang), sa = sin(ang);
+              vec2 lq = vec2(ca * q.x + sa * q.y, -sa * q.x + ca * q.y);
+              float broad = step(0.7, h4);
+              float size = mix(0.05 + 0.035 * h3, 0.07 + 0.03 * h3, broad);
+              float t = clamp(lq.x / size, -1.0, 1.0);
+              float sd = max(abs(lq.y) - size * mix(0.28, 0.55, broad) * (1.0 - t * t), abs(lq.x) - size);
+              float fx = length(dFdx(vSfWP.xz)), fy = length(dFdy(vSfWP.xz));
+              float a = clamp(0.5 - sd / max(sqrt(fx * fy), 1e-4), 0.0, 1.0) * smoothstep(size * 0.9, size * 0.3, min(fx, fy));
+              c = mix(c, mix(vec3(0.42, 0.24, 0.035), vec3(0.2, 0.09, 0.03), h2 * h2), a);
+              jnPud *= 1.0 - a;
+            }
+          }
           diffuseColor.rgb = c;
         }`,
       normal: /* glsl */ `

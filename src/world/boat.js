@@ -68,10 +68,13 @@ function boatMaterials(mats, tex) {
       g.stroke();
     }
   });
-  const mk = (key, params, o = {}) => patch(new THREE.MeshStandardMaterial({ vertexColors: true, ...params }), { key, ...o });
+  // a boat carries its rain and snow under the bridges with it
+  const mk = (key, params, o = {}) => patch(new THREE.MeshStandardMaterial({ vertexColors: true, ...params }), { key, carried: true, ...o });
   shared = {
     hull: mk('boat-hull', { map: tex.old_planks_02_c, normalMap: tex.old_planks_02_n, color: 0x2c2420, roughness: 0.5 }, { wet: 0.4, gloss: 0.6 }),
-    inner: mk('boat-inner', { map: tex.weathered_planks_c, color: 0x9a8270, roughness: 0.8 }, { wet: 0.4, gloss: 0.4 }),
+    // no snow on the floor and the decks: a boat moves, so the rain-occlusion map cannot keep it out from under the
+    // awnings, and the boatman sweeps his decks
+    inner: mk('boat-inner', { map: tex.weathered_planks_c, color: 0x9a8270, roughness: 0.8 }, { wet: 0.4, gloss: 0.4, snow: 0 }),
     // the matting is tarred black outside; seen from under it (the back faces) it is split bamboo, warm and pale
     awning: mk('boat-awning', { map: weave, roughness: 0.65, side: THREE.DoubleSide }, {
       wet: 0.3,
@@ -175,6 +178,21 @@ function awningDrips() {
       const x = 0.72 * Math.sin(th), y = base + H * Math.cos(th);
       const water = Math.abs(x) > hullW(z) - 0.04;
       out.push([x, y, z, water ? y : y - FLOOR_Y, water ? 1 : 0]);
+    }
+  }
+  return out;
+}
+
+// where a downpour's drops are seen to bounce on the awnings (fx/splash.js): sixteen points over the top of each, in the
+// boat's frame
+export function awningSplashPoints() {
+  const R = rng(61);
+  const out = [];
+  for (const [z0, z1, H] of AWNINGS) {
+    const base = awningBase(z0, z1);
+    for (let i = 0; i < 16; i++) {
+      const th = R.range(-0.95, 0.95), z = R.range(z0 + 0.06, z1 - 0.06);
+      out.push([0.7 * Math.sin(th), base + H * Math.cos(th), z]);
     }
   }
   return out;

@@ -1,8 +1,8 @@
 // The sounds, made from numbers: pink noise for the beds, loops of raindrops in the water, on the stones and on a roof
-// just overhead, and the single sounds: a drip, the oar's creak on its pin and the swish of its blade, thunder, a
-// temple bell, the reverb's tail. Each comes back as plain sample arrays, { rate, chs: [Float32Array, ...] }, at a
-// rate of its own (the low sounds need fewer samples), so nothing here needs an AudioContext, and all of it is
-// deterministic.
+// just overhead, of dry leaves stirring, of autumn's crickets and summer's cicadas and frogs, and the single sounds: a
+// drip, the oar's creak on its pin and the swish of its blade, thunder, a temple bell, the reverb's tail. Each comes
+// back as plain sample arrays, { rate, chs: [Float32Array, ...] }, at a rate of its own (the low sounds need fewer
+// samples), so nothing here needs an AudioContext, and all of it is deterministic.
 import { rng } from '../lib/math.js';
 
 const TAU = Math.PI * 2;
@@ -152,6 +152,162 @@ export function dripOnStone(R, rate) {
   const at = Math.floor(R.range(0.006, 0.012) * rate);
   for (let i = 0; i < n; i++) x[i] = a[i] + b[i] * 0.6 + x[i] * 0.2 + (i >= at ? spray[i - at] * 0.08 : 0);
   return peakTo(x, 1);
+}
+
+// a dry leaf stirred by the wind or scraping over the stones: a few tiny crackles close together, bright and papery
+export function crackle(R, rate) {
+  const n = Math.ceil(rate * R.range(0.015, 0.05));
+  const x = new Float32Array(n);
+  for (let c = 2 + Math.floor(R.next() * 5); c > 0; c--) {
+    const at = Math.floor(R.next() * n * 0.8), len = Math.ceil(rate * R.range(0.0008, 0.003)), amp = R.range(0.4, 1);
+    for (let i = 0; i < len && at + i < n; i++) x[at + i] += (R.next() * 2 - 1) * Math.exp(-i / (len * 0.3)) * amp;
+  }
+  const hi = ring(x, rate, R.range(3000, 7000), 0.0008);
+  for (let i = 0; i < n; i++) x[i] = x[i] * 0.5 + hi[i];
+  return peakTo(x, 1);
+}
+
+// Autumn's insects at dusk and through the night (秋虫唧唧): a few crickets about the banks, each at its own pitch and
+// pace and from its own place in the field. Field crickets chirp three to five pulses at a time with a pause now and
+// then; a bell cricket rings a long quick trill and rests. Each pulse a tone falling a little in pitch, with a touch of
+// its octave. A seamless stereo loop: a chirp running past the end carries on from the start.
+export function crickets(seconds, rate, seed) {
+  const R = rng(seed);
+  const n = Math.round(seconds * rate);
+  const L = new Float32Array(n), Rt = new Float32Array(n);
+  const add = (t, x, gl, gr) => {
+    for (let i = 0, j = Math.floor(t * rate) % n; i < x.length; i++, j = j + 1 === n ? 0 : j + 1) { L[j] += x[i] * gl; Rt[j] += x[i] * gr; }
+  };
+  const pulse = (f, len) => {
+    const m = Math.round(len * rate), x = new Float32Array(m);
+    let ph = 0;
+    for (let i = 0; i < m; i++) {
+      const t = i / m;
+      ph += (TAU * f * (1 - 0.04 * t)) / rate;
+      x[i] = (Math.sin(ph) + 0.22 * Math.sin(2 * ph)) * Math.min(1, t * 6) * (1 - t) * (1 - t);
+    }
+    return x;
+  };
+  for (let v = 0; v < 7; v++) {
+    const a = 0.15 + 0.85 * Math.pow(R.next(), 2);
+    const p = ((R.next() * 1.8 - 0.9) + 1) * (Math.PI / 4);
+    const gl = Math.cos(p) * a, gr = Math.sin(p) * a;
+    const f = R.range(3600, 5200);
+    if (v < 5) {
+      const period = R.range(0.38, 0.75), pulses = 3 + Math.floor(R.next() * 3), pp = R.range(0.03, 0.042);
+      const x = pulse(f, R.range(0.012, 0.018));
+      for (let t = R.next() * period; t < seconds; t += period * R.range(0.92, 1.08)) {
+        if (R.next() < 0.12) continue;
+        for (let k = 0; k < pulses; k++) add(t + k * pp, x, gl * (k ? 1 : 0.7), gr * (k ? 1 : 0.7));
+      }
+    } else {
+      const pp = R.range(0.016, 0.02);
+      const x = pulse(f * 0.75, 0.009);
+      for (let t = R.next() * 2; t < seconds;) {
+        const dur = R.range(0.8, 2.2);
+        for (let s = 0; s < dur; s += pp) add(t + s, x, gl * 0.6, gr * 0.6);
+        t += dur + R.range(1, 3);
+      }
+    }
+  }
+  return { rate, chs: level([L, Rt], 0.1) };
+}
+
+// Summer's cicadas (蝉鸣): each sings in long phrases, a rasping buzz swelling up, holding and dying away, then resting;
+// the buzz is noise rung through the cicada's own band and chopped by its quick pulses. A few of them, near and far,
+// each from its own place in the field. A seamless stereo loop: a phrase running past the end carries on from the start.
+// The work comes in pieces, one singer each (steps), to be spread over a few moments; done() gives the loop.
+export function cicadaSteps(seconds, rate, seed) {
+  const R = rng(seed);
+  const n = Math.round(seconds * rate);
+  const L = new Float32Array(n), Rt = new Float32Array(n);
+  // one stretch of noise for them all, each reading it from its own place; their pulse's shape from a table
+  const noise = new Float32Array(n);
+  for (let i = 0; i < n; i++) noise[i] = R.next() * 2 - 1;
+  const PULSE = new Float32Array(256);
+  for (let i = 0; i < 256; i++) { const v = 0.5 + 0.5 * Math.sin((TAU * i) / 256); PULSE[i] = v * v * v; }
+  const env = new Float32Array(n);
+  const singer = () => {
+    const a = 0.25 + 0.75 * Math.pow(R.next(), 1.5);
+    const p = ((R.next() * 1.8 - 0.9) + 1) * (Math.PI / 4);
+    const gl = Math.cos(p) * a, gr = Math.sin(p) * a;
+    const f = R.range(4200, 6800), pr = R.range(140, 230);
+    const off = Math.floor(R.next() * n);
+    // its phrases: up over a second, held a few, down over one and a half, then a rest
+    env.fill(0);
+    for (let t = R.range(0, 3); t < seconds;) {
+      const up = R.range(0.8, 1.4), hold = R.range(2, 5.5), down = R.range(1.2, 2), len = up + hold + down;
+      for (let i = 0, j = Math.floor(t * rate) % n, m = Math.round(len * rate); i < m; i++, j = j + 1 === n ? 0 : j + 1) {
+        const s = i / rate, u = s < up ? s / up : s < up + hold ? 1 : 1 - (s - up - hold) / down;
+        if (u * u > env[j]) env[j] = u * u;
+      }
+      t += len + R.range(1.5, 4.5);
+    }
+    // in one pass: the noise rung through its two bands (as ring() does), chopped by its pulses, which quicken a
+    // little as the phrase swells, shaped by the phrases, and placed in the field
+    const r1 = Math.exp(-1 / (0.004 * rate)), w1 = (TAU * f) / rate, c1 = 2 * r1 * Math.cos(w1), q1 = r1 * r1, k1 = Math.sin(w1);
+    const r2 = Math.exp(-1 / (0.003 * rate)), w2 = (TAU * f * 1.32) / rate, c2 = 2 * r2 * Math.cos(w2), q2 = r2 * r2, k2 = Math.sin(w2) * 0.6;
+    let y1 = 0, y2 = 0, z1 = 0, z2 = 0, ph = 0;
+    const k = (pr * 256) / rate;
+    for (let i = 0, j = off; i < n; i++, j = j + 1 === n ? 0 : j + 1) {
+      const x = noise[j];
+      const y = x * k1 + c1 * y1 - q1 * y2;
+      y2 = y1; y1 = y;
+      const z = x * k2 + c2 * z1 - q2 * z2;
+      z2 = z1; z1 = z;
+      const e = env[i];
+      ph += k * (0.9 + 0.15 * e);
+      if (ph >= 256) ph -= 256;
+      const o = (y + z) * PULSE[ph | 0] * e;
+      L[i] += o * gl;
+      Rt[i] += o * gr;
+    }
+  };
+  return { steps: [singer, singer, singer, singer], done: () => ({ rate, chs: level([L, Rt], 0.12) }) };
+}
+
+// the same, all at once
+export function cicadas(seconds, rate, seed) {
+  const job = cicadaSteps(seconds, rate, seed);
+  for (const step of job.steps) step();
+  return job.done();
+}
+
+// Summer's frogs (蛙鸣): a chorus in the lotus and along the banks, each frog croaking in short runs of pulses, a hoarse
+// tone (a train of narrow pulses at its pitch) through the resonances of its throat, at its own pitch and pace, near
+// and far, now and then resting. A seamless stereo loop.
+export function frogs(seconds, rate, seed) {
+  const R = rng(seed);
+  const n = Math.round(seconds * rate);
+  const L = new Float32Array(n), Rt = new Float32Array(n);
+  const add = (t, x, gl, gr) => {
+    for (let i = 0, j = Math.floor(t * rate) % n; i < x.length; i++, j = j + 1 === n ? 0 : j + 1) { L[j] += x[i] * gl; Rt[j] += x[i] * gr; }
+  };
+  const croak = (f0, pulses, pp, f1, f2) => {
+    const m = Math.round((pulses * pp + 0.05) * rate), src = new Float32Array(m);
+    for (let k = 0; k < pulses; k++) {
+      const at = Math.round(k * pp * rate), len = Math.round(pp * 0.7 * rate);
+      const per = rate / f0;
+      for (let i = 0, c = 0; i < len && at + i < m; i++, c = c + 1 >= per ? c + 1 - per : c + 1) if (c < per * 0.15) src[at + i] += Math.sin((Math.PI * i) / len);
+    }
+    const a = ring(src, rate, f1, 0.006), b = ring(src, rate, f2, 0.004);
+    for (let i = 0; i < m; i++) src[i] = a[i] + 0.5 * b[i];
+    return peakTo(src, 1);
+  };
+  for (let v = 0; v < 10; v++) {
+    const a = 0.12 + 0.88 * Math.pow(R.next(), 2);
+    const p = ((R.next() * 1.8 - 0.9) + 1) * (Math.PI / 4);
+    const gl = Math.cos(p) * a, gr = Math.sin(p) * a;
+    const f0 = R.range(180, 420), pulses = 2 + Math.floor(R.next() * 4), pp = R.range(0.045, 0.085);
+    const f1 = R.range(500, 900), f2 = R.range(1300, 2000);
+    const takes = [croak(f0, pulses, pp, f1, f2), croak(f0 * 1.04, pulses, pp * 0.96, f1, f2 * 1.05)];
+    const period = R.range(0.5, 1.6);
+    for (let t = R.next() * period; t < seconds; t += period * R.range(0.8, 1.25)) {
+      if (R.next() < 0.25) continue;
+      add(t, takes[R.next() < 0.5 ? 0 : 1], gl, gr);
+    }
+  }
+  return { rate, chs: level([L, Rt], 0.1) };
 }
 
 // ------------------------------------------------------------------ single sounds: (seed, rate, ...) -> { rate, chs }

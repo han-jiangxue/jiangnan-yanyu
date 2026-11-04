@@ -24,8 +24,10 @@ export const U = {
   uFogParams: { value: v4(0.001, 0.006, 0.05, 0) }, // haze/m, height fog density at y = 0, its falloff /m, -
   uMist: { value: 1 },
   uWind: { value: v4(0.6, -0.8, 0.3, 0) }, // dir xz, strength, -
-  uSeason: { value: v4(1, 0, 0, 0) }, // spring, summer, autumn, winter weights (only spring is drawn so far)
-  uSnow: { value: 0 },
+  uSeason: { value: v4(1, 0, 0, 0) }, // spring, summer, autumn, winter weights, eased from one season to the next
+  uSnow: { value: 0 }, // snow lying on the roofs and the slabs, 0..1
+  uSnowFall: { value: 0 }, // snow falling now, 0..1
+  uFrost: { value: 0 }, // hoar frost on a clear, cold night, 0..1
   uWet: { value: 0 },
   uRain: { value: 0 },
   uNight: { value: 0 },
@@ -56,7 +58,7 @@ float sfFbm3(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 3; i++){ s += 
 `;
 
 export const UNIFORMS_GLSL = /* glsl */ `
-uniform float uTime, uMist, uSnow, uWet, uRain, uNight, uFlash, uLampOn, uWinOff;
+uniform float uTime, uMist, uSnow, uSnowFall, uFrost, uWet, uRain, uNight, uFlash, uLampOn, uWinOff;
 uniform vec3 uSunDir, uTrueSun, uMoonDir, uSunCol, uFogSun, uFogAway, uFlashDir, uSkyZen, uSkyHor, uAmbUp, uAmbDown, uViewPos;
 uniform vec4 uFogParams, uWind, uSeason;
 uniform vec4 uLampPos[${MAX_LAMPS}];
@@ -257,15 +259,18 @@ const WP_VERT = /* glsl */ `
 `;
 
 /**
- * Patch a built-in material (Standard) with the shared world: fog and mist, lamps, lightning, wetness, the sky's
- * sheen on wet surfaces and span-based occlusion.
- * opts: { key, wet: 0..1 how much it darkens when soaked, gloss: 0..1 how glossy it gets, hooks: {vertex,
- * vertexPost, map, normal, alpha, preLight, light, post}, vertexHead, fragHead, uniforms, wrap }
+ * Patch a built-in material (Standard) with the shared world: fog and mist, lamps, lightning, wetness, snow lying on
+ * it and frost, the sky's sheen on wet surfaces and span-based occlusion.
+ * opts: { key, wet: 0..1 how much it darkens when soaked, gloss: 0..1 how glossy it gets, snow: 0..1 how much snow
+ * (and frost) settles on it, carried: a thing that moves (a boat, a walker), hooks: {vertex, vertexPost, map, normal,
+ * alpha, snow (may change sfSnowK), preLight, light, post}, vertexHead, fragHead, uniforms, wrap }
  * Hooks share main()'s scope: a variable declared at the top level of an earlier hook is visible in later ones.
  */
 export function patch(mat, opts = {}) {
   const wet = opts.wet ?? 1;
   const gloss = opts.gloss ?? 0.65;
+  const snow = opts.snow ?? 1;
+  const carried = !!opts.carried;
   const hooks = opts.hooks || {};
   const extraUniforms = opts.uniforms || {};
   mat.onBeforeCompile = (sh) => {
@@ -286,14 +291,49 @@ export function patch(mat, opts = {}) {
         vec3 sfNW = inverseTransformDirection(normal, viewMatrix);
         // rain reaches what faces the sky; walls take it slantwise, the undersides of eaves not at all
         float sfExpo = smoothstep(-0.6, 0.0, sfNW.y) * mix(0.55, 1.0, max(sfNW.y, 0.0));
-        // what faces up is wet only where the sky reaches it: dry under the eaves and the corridor roof
-        if (sfNW.y > 0.3) sfExpo *= mix(1.0, sfSkyExposure(vSfWP), smoothstep(0.3, 0.8, sfNW.y));
+        // what faces up is wet only where the sky reaches it: dry under the eaves and the corridor roof (the occlusion
+        // map is of the town: things that move are not in it, and keep their rain and snow under a bridge or a roof)
+        float sfSky = ${carried ? '1.0' : 'sfNW.y > 0.3 ? sfSkyExposure(vSfWP) : 1.0'};
+        if (sfNW.y > 0.3) sfExpo *= mix(1.0, sfSky, smoothstep(0.3, 0.8, sfNW.y));
         float sfWetK = uWet * sfExpo;
+        // Snow lies on what faces up where the sky reaches it, above the water: in soft patches while it is thin, then
+        // over everything (on a boat or an umbrella evenly, about as much as the town has on average). Under it the
+        // surface is dry.
+        float sfSnowK = 0.0;
+        if (uSnow > 0.001 && sfNW.y > 0.3) {
+          // which way the surface itself faces, more than its bumps: snow does not cling to the face of a wall
+          float sfUp = mix(inverseTransformDirection(nonPerturbedNormal, viewMatrix).y, sfNW.y, 0.35);
+          ${carried ? 'float sfCover = smoothstep(0.2, 0.6, uSnow);' : `float sfSn = sfNoise(vSfWP.xz * 1.1) * 0.65 + sfNoise(vSfWP.xz * 3.7) * 0.35;
+          float sfCover = smoothstep(sfSn * 0.75 - 0.05, sfSn * 0.75 + 0.33, uSnow);`}
+          sfSnowK = sfCover * smoothstep(0.35, 0.75, sfUp) * sfSky * smoothstep(0.0, 0.15, vSfWP.y) * ${snow.toFixed(3)};
+          ${hooks.snow || ''}
+          sfWetK *= 1.0 - sfSnowK;
+        }
+        // hoar frost on a clear, cold night: a thin grey-white, a little uneven, on what faces the open sky (and takes
+        // snow), dry where it lies
+        float sfFrostK = 0.0;
+        if (uFrost > 0.001 && sfNW.y > 0.3) {
+          float sfUpF = mix(inverseTransformDirection(nonPerturbedNormal, viewMatrix).y, sfNW.y, 0.35);
+          sfFrostK = uFrost * smoothstep(0.45, 0.85, sfUpF) * sfSky * smoothstep(0.0, 0.1, vSfWP.y) * (1.0 - sfSnowK) * (0.7 + 0.3 * sfNoise(vSfWP.xz * 7.0)) * ${snow.toFixed(3)};
+          sfWetK *= 1.0 - sfFrostK;
+        }
         ${hooks.preLight || ''}
         {
           diffuseColor.rgb *= 1.0 - ${wet.toFixed(3)} * 0.4 * sfWetK;
           #ifdef STANDARD
             roughnessFactor = mix(roughnessFactor, roughnessFactor * (1.0 - ${gloss.toFixed(3)}), sfWetK);
+          #endif
+        }
+        if (sfSnowK > 0.0) {
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.82, 0.84, 0.88), sfSnowK);
+          #ifdef STANDARD
+            roughnessFactor = mix(roughnessFactor, 0.9, sfSnowK);
+          #endif
+        }
+        if (sfFrostK > 0.0) {
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.6, 0.63, 0.68), sfFrostK * 0.4);
+          #ifdef STANDARD
+            roughnessFactor = mix(roughnessFactor, 0.8, sfFrostK);
           #endif
         }`
       )
@@ -317,6 +357,6 @@ export function patch(mat, opts = {}) {
       .replace('#include <fog_fragment>', `gl_FragColor.rgb = mix(sfAtmos(gl_FragColor.rgb, vSfWP), gl_FragColor.rgb, smoothstep(0.0, -0.35, vSfWP.y));\n${hooks.post || ''}`);
     if (opts.onShader) opts.onShader(sh);
   };
-  mat.customProgramCacheKey = () => 'jn:' + (opts.key || mat.type) + ':' + wet + ':' + gloss;
+  mat.customProgramCacheKey = () => 'jn:' + (opts.key || mat.type) + ':' + wet + ':' + gloss + ':' + snow + (carried ? ':carried' : '');
   return mat;
 }
