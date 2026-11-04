@@ -1,22 +1,40 @@
-# 江南烟雨 · Jiangnan in the Rain
+<div align="center">
 
-撑一只乌篷船，在细雨里穿过一座江南水乡古镇。three.js 实时渲染，原生 JavaScript，不用引擎和框架。
+<h1>江南烟雨 · Jiangnan in the Rain</h1>
 
-工程依赖和脚本由目录内的 `package.json` 管理。
+<p><b>撑一只乌篷船，在细雨里穿过一座江南水乡古镇，从清晨薄雾一直划到子夜钟声。</b></p>
 
-实现思路参考了 [Sakura Fantasy](https://github.com/billpwchan/sakura-fantasy)（MIT）。共享参数、渲染管线、水面倒影等模块是在它的代码上改写的，见 [CREDITS.md](CREDITS.md)。完整计划见 [docs/PLAN.md](docs/PLAN.md)。
+<p><a href="README.md">中文</a> · <a href="README.en.md">English</a> · <a href="docs/PLAN.md">实现计划</a> · <a href="CREDITS.md">致谢与许可</a></p>
 
-## 进度
+<p><img src="https://img.shields.io/badge/three.js-r186-black" alt="three.js r186"> <img src="https://img.shields.io/badge/WebGL-2-990000" alt="WebGL 2"> <img src="https://img.shields.io/badge/%E6%97%A0%E5%BC%95%E6%93%8E-%E6%97%A0%E6%A1%86%E6%9E%B6-2b6cb0" alt="无引擎 无框架"> <img src="https://img.shields.io/badge/Web%20Audio-%E5%AE%9E%E6%97%B6%E5%90%88%E6%88%90-2f855a" alt="Web Audio 实时合成"></p>
 
-| 阶段 | 状态 |
-|---|---|
-| M0 骨架：工程、渲染管线、共享参数、时辰与天气、调速器、截图脚本 | 完成 |
-| M1 一段水巷：程序化民居、石拱桥、驳岸、水面、雨、雾 | 完成 |
-| M2 雨雾细节：遮雨图、廊棚、檐下滴水、积水、贴水雾带、水墨远山 | 完成 |
-| M3 生命感：垂柳、乌篷船与船夫摇橹、尾迹、撑伞行人、酒旗晾衣、道具、杂草荷叶芭蕉 | 完成 |
-| M4 旅程与交互：开篇、坐船顺河而下四景、诗笺、跟随 / 船舱 / 电影 / 拍照四种视角、底栏、章节跳转、分享链接、镇口牌坊 | 完成 |
-| M5 时辰与夜：窗灯逐盏亮起、深夜熄灯、窗后伪室内、店铺灯笼、灯笼光晕、水面碎光柱、夜云映灯、晨间熄灯 | 完成，待评审 |
-| M6 声音：远处雨幕、雨落水面和石板、头顶雨打篷顶，廊下和桥洞里变闷、起回声；檐下滴水、摇橹吱呀与划水、水声、雷声、子夜和清晨的钟声，都由 Web Audio 实时合成 | 完成，待评审 |
+<img src="docs/media/alley.webp" alt="细雨里的水巷：粉墙黛瓦夹岸，远处一座石拱桥，一只乌篷船顺河而下，岸边挂着红灯笼" width="100%">
+
+</div>
+
+three.js 实时渲染，原生 JavaScript，不用引擎和框架。房屋、桥、船、柳树、行人都由代码生成，雨声、橹声、钟声也是实时合成的，没有一个录音文件。
+
+实现思路参考了 [Sakura Fantasy](https://github.com/billpwchan/sakura-fantasy)（MIT）。共享参数、渲染管线、水面倒影等模块是在它的代码上改写的，见 [CREDITS.md](CREDITS.md)。工程依赖和脚本由目录内的 `package.json` 管理。
+
+> 本页的截图用的是无显卡的软件渲染和 `q=low` 画质档（没有阴影和 MSAA），在有显卡的机器上画面会更细、更亮。
+
+## 画面
+
+<table>
+<tr><td width="50%" align="center" valign="top"><a href="docs/media/bridge.webp"><img src="docs/media/bridge.webp" alt="石拱桥与倒影：拱和水里的倒影合成一个圆" width="100%"></a><br><b>石桥烟柳</b>：半圆拱落在水面上，拱和倒影合成一个圆</td><td width="50%" align="center" valign="top"><a href="docs/media/pier.webp"><img src="docs/media/pier.webp" alt="河埠头：石阶通向水面，门边挂着灯笼，一只乌篷船泊在一旁" width="100%"></a><br><b>枕河人家</b>：后门直接临水，河埠头、灯笼、泊着的船</td></tr>
+<tr><td width="50%" align="center" valign="top"><a href="docs/media/dusk.webp"><img src="docs/media/dusk.webp" alt="黄昏的拱桥：窗灯亮起，灯笼的光在水面拉成一道碎光柱" width="100%"></a><br><b>黄昏</b>：窗灯一盏盏亮起，灯光在水里拉成碎光柱</td><td width="50%" align="center" valign="top"><a href="docs/media/midnight.webp"><img src="docs/media/midnight.webp" alt="入夜的水巷：窗灯和廊下的灯笼亮着，灯光在水面拉成碎光柱，船头一盏灯" width="100%"></a><br><b>入夜</b>：雨停了，窗灯和廊下的灯笼亮着，灯光在水里碎成光柱；再晚些窗灯渐渐熄去，远处响起钟声</td></tr>
+<tr><td width="50%" align="center" valign="top"><a href="docs/media/hills.webp"><img src="docs/media/hills.webp" alt="俯瞰：雾中层层叠叠的水墨远山和一座宝塔" width="100%"></a><br><b>远山与塔</b>：按距离淡出的水墨层峦</td><td width="50%" align="center" valign="top"><a href="docs/media/journey.webp"><img src="docs/media/journey.webp" alt="旅程界面：左侧长卷，底栏的时、天、视和各个按钮" width="100%"></a><br><b>旅程界面</b>：左侧长卷、底栏的时辰、天气和视角</td></tr>
+</table>
+
+## 特色
+
+- **烟雨本身**：雨丝、水面涟漪、檐下滴水、湿漉漉的青石板和积水、贴着水面飘的雾，遮雨图让廊棚、屋檐和桥洞下没有雨、地面是干的
+- **水**：沿反射光线取倒影、涟漪打碎倒影、折射与吸收、船的尾迹；夜里灯笼在水面拉出碎光柱
+- **程序化的江南**：马头墙、小青瓦、美人靠、河埠头、单孔石拱桥、三孔石板桥、廊棚、牌坊，约 550 栋房子，每次打开都是同一座镇
+- **生命感**：垂柳、船夫摇橹的乌篷船、撑油纸伞的行人（雨停或进廊棚就收伞）、酒旗和晾衣
+- **时辰与夜**：窗灯逐盏亮起，窗后有纵深的房间，深夜熄灯，清晨灯笼先灭
+- **声音**：雨分远处雨幕、落在水面和石板、打在头顶篷顶几层，进廊棚、钻桥洞、坐进船舱时音色会变；滴水、摇橹吱呀与划水、雷声、子夜和清晨的钟声，全部由 Web Audio 实时合成
+- **跑得动**：渲染分辨率自动调节，细节分级，手机自动用低画质档
 
 ## 运行
 
@@ -30,6 +48,18 @@ npm run dev          # http://localhost:5192
 贴图和道具模型存放在 `public/assets/`，不需要另外下载。想换贴图或重新生成时运行 `npm run fetch-assets`，再运行 `node scripts/simplify-props.mjs` 把道具扫描模型减到每个约一千个三角形、贴图缩到 256（都需要 ImageMagick）。
 
 推荐新版 Chrome、Edge 或 Safari，需要 WebGL2。
+
+## 里程碑
+
+| 阶段 | 内容 | 状态 |
+|---|---|---|
+| M0 | 骨架：工程、渲染管线、共享参数、时辰与天气、调速器、截图脚本 | ✅ |
+| M1 | 一段水巷：程序化民居、石拱桥、驳岸、水面、雨、雾 | ✅ |
+| M2 | 雨雾细节：遮雨图、廊棚、檐下滴水、积水、贴水雾带、水墨远山 | ✅ |
+| M3 | 生命感：垂柳、乌篷船与船夫摇橹、尾迹、撑伞行人、酒旗晾衣、道具、杂草荷叶芭蕉 | ✅ |
+| M4 | 旅程与交互：开篇、坐船顺河而下四景、诗笺、跟随 / 船舱 / 电影 / 拍照四种视角、底栏、章节跳转、分享链接、镇口牌坊 | ✅ |
+| M5 | 时辰与夜：窗灯逐盏亮起、深夜熄灯、窗后伪室内、店铺灯笼、灯笼光晕、水面碎光柱、夜云映灯、晨间熄灯 | ✅ |
+| M6 | 声音：远处雨幕、雨落水面和石板、头顶雨打篷顶，廊下和桥洞里变闷、起回声；檐下滴水、摇橹吱呀与划水、水声、雷声、子夜和清晨的钟声，都由 Web Audio 实时合成 | ✅ |
 
 ## 旅程
 
@@ -92,7 +122,7 @@ npm run dev          # http://localhost:5192
 | `scale` | 渲染分辨率比例，0.25–1 | `scale=0.5` |
 | `ui` | `ui=0` 隐藏界面 | |
 
-例如：[雨后的拱桥](http://localhost:5192/?shot=bridge&w=after&h=14)，[黄昏细雨](http://localhost:5192/?shot=bridge&h=17.7)，[中雨里的廊下](http://localhost:5192/?shot=lane&w=rain)，[入夜的廊棚](http://localhost:5192/?shot=lane&h=19.6)，[远山与塔](http://localhost:5192/?shot=hills)。
+例如：[雨后的拱桥](http://localhost:5192/?shot=bridge&w=after&h=14)，[黄昏细雨](http://localhost:5192/?shot=bridge&h=17.7)，[中雨里的廊下](http://localhost:5192/?shot=lane&w=rain)，[入夜的廊棚](http://localhost:5192/?shot=lane&h=19.6)，[远山与塔](http://localhost:5192/?shot=hills)。（先 `npm run dev`。）
 
 ## 截图脚本
 
@@ -145,6 +175,7 @@ src/
 └── ui/               旅程界面（journey-ui.js：开篇、诗笺、长卷、底栏、拍照、分享）、评审面板（panel.js）
 scripts/              贴图下载、截图
 docs/PLAN.md          实现计划与里程碑
+docs/media/           本页的截图
 ```
 
 ## 常见修改
@@ -179,3 +210,7 @@ docs/PLAN.md          实现计划与里程碑
 - 手机和小平板自动用 `mobile` 档
 - 声音在第一次点击或按键时才建 AudioContext，所有声音都在之后的几帧里分块合成（每块十几毫秒）；雷声要选了骤雨、钟声要到了它的时辰才合成；静音或页面切到后台时 AudioContext 挂起
 - 测量：`node scripts/perf.mjs "z=-22&h=19.5&q=high&ui=0"` 逐通道统计 draw call、三角形和显存（先 `npm run dev`）
+
+## 致谢
+
+代码思路来自 [Sakura Fantasy](https://github.com/billpwchan/sakura-fantasy)（MIT），贴图和道具模型来自 [Poly Haven](https://polyhaven.com)（CC0），声音全部由代码合成，诗句出自杜牧、韦庄、陆游、志南、杜荀鹤。详见 [CREDITS.md](CREDITS.md)。
