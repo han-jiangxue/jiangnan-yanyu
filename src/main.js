@@ -30,7 +30,7 @@ import { createRain } from './fx/rain.js';
 import { createDrips, dripActivity } from './fx/drips.js';
 import { createMist } from './fx/mist.js';
 import { createHalos } from './fx/halos.js';
-import { createSnow } from './fx/snow.js';
+import { createSnow, CATKINS } from './fx/snow.js';
 import { createLeaves } from './fx/leaves.js';
 import { createSplash } from './fx/splash.js';
 import { createFireflies } from './fx/fireflies.js';
@@ -157,12 +157,14 @@ async function boot() {
   await tick();
   const willows = createWillows(mats, planWillows(banks.userData.piers));
   scene.add(willows);
-  // the maples' red leaves float near them
-  willows.userData.crowns.filter((c) => c.kind === 1).slice(0, 6).forEach((c, i) => water.uniforms.uMaples.value[i].set(c.x, c.z, c.r, 0));
+  // the maples' red leaves and the apricots' petals float near them
+  willows.userData.crowns.filter((c) => c.kind > 0).slice(0, 10).forEach((c, i) => water.uniforms.uTrees.value[i].set(c.x, c.z, c.r, c.kind));
   const rain = createRain(QUALITY.rain);
   scene.add(rain.mesh);
   const snow = createSnow(QUALITY.snow);
   scene.add(snow.mesh);
+  const catkins = createSnow(QUALITY.catkins, CATKINS);
+  scene.add(catkins.mesh);
   const leaves = createLeaves(QUALITY.leaves, willows.userData.crowns, water.uniforms.tCanal.value);
   scene.add(leaves.mesh);
   const splash = createSplash(QUALITY.splash, water.uniforms.tCanal.value, awningSplashPoints());
@@ -448,7 +450,7 @@ async function boot() {
 
   const state = { frames: 0, ready: false, fps: 60 };
   // what the soundscape is told each frame; the boats with a boatman at the oar are the ones it listens to
-  const heard = { live: false, veil: false, rain: 0, wet: 0, wind: 0, hours: 0, night: 0, daylight: 1, storm: false, snowFall: 0, snowLying: 0, summer: 0, autumn: 0, trees: 1e9, pond: 1e9, seat: false, boats: [player, ...moving] };
+  const heard = { live: false, veil: false, rain: 0, wet: 0, wind: 0, hours: 0, night: 0, daylight: 1, storm: false, snowFall: 0, snowLying: 0, spring: 0, summer: 0, autumn: 0, trees: 1e9, pond: 1e9, seat: false, boats: [player, ...moving] };
   // the lotus stretches as segments along their banks, for how far the frogs are
   const pondLines = PONDS.map(([z0, z1, side]) => { const z = (z0 + z1) / 2, n = bankNormal(z, side); return { x: bankX(z, side) - n.x * 1.5, z0, z1 }; });
   let last = performance.now();
@@ -498,9 +500,12 @@ async function boot() {
     // the vertex shader only to throw every one away
     rain.mesh.visible = U.uRain.value > 0.005;
     snow.mesh.visible = U.uSnowFall.value > 0.005;
+    catkins.mesh.visible = U.uSeason.value.x > 0.01 && U.uRain.value < 0.12 && U.uNight.value < 0.6 && U.uSnowFall.value < 0.2;
+    if (catkins.mesh.visible) catkins.update(camera);
     drips.mesh.visible = dripActivity(U.uRain.value, U.uWet.value, U.uSnowFall.value) > 0.01;
-    leaves.mesh.visible = U.uSeason.value.z > 0.01;
-    if (leaves.mesh.visible) leaves.update(camera);
+    // autumn's falling leaves, spring's petals
+    leaves.mesh.visible = U.uSeason.value.z > 0.01 || U.uSeason.value.x > 0.01;
+    if (leaves.mesh.visible) leaves.update(camera, U.uSeason.value.x, U.uSeason.value.z);
     // a downpour's splashes, some on your own boat's awnings
     splash.mesh.visible = U.uRain.value > 0.45;
     if (splash.mesh.visible) splash.update(camera, review ? null : player.root);
@@ -546,7 +551,7 @@ async function boot() {
     Object.assign(heard, {
       live: review || ctl.started, veil: ctl.turning, rain: U.uRain.value, wet: U.uWet.value, wind: U.uWind.value.z,
       hours: env.hours, night: env.night, daylight: env.daylight, storm: env.weather === 'storm', snowFall: U.uSnowFall.value, snowLying: U.uSnow.value,
-      summer: env.sw[1], autumn: env.sw[2], seat: !!director && director.mode === 'seat',
+      spring: env.sw[0], summer: env.sw[1], autumn: env.sw[2], seat: !!director && director.mode === 'seat',
     });
     const cp = camera.position;
     heard.trees = Math.min(...willows.userData.crowns.map((c) => Math.hypot(c.x - cp.x, c.z - cp.z)));

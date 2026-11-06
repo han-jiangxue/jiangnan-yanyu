@@ -1,8 +1,10 @@
-// The maples by the water (江枫): broad trees standing in a few of the willows' places, the ends of the stone bridge
-// above all (江枫渔火对愁眠). A trunk and limbs spreading up and out, built into the willows' bark so that they cost no
-// draw of their own, and a crown of leaf cards round the limbs' ends. Tender green in spring; in autumn the leaves
-// turn one by one from the outside of the crown in, yellow, orange, then red, and a third of them fall; bare in winter.
-// (Deep green in summer.)
+// The maples by the water (江枫) and the apricots (杏花): broad trees standing in a few of the willows' places, the
+// maples at the ends of the stone bridge above all (江枫渔火对愁眠), the apricots where spring's poems sell their
+// blossom (深巷明朝卖杏花, 沾衣欲湿杏花雨). A trunk and limbs spreading up and out, built into the willows' bark so that
+// they cost no draw of their own, and a crown of cards round the limbs' ends, both kinds in one mesh.
+// A maple is tender green in spring and deep green in summer; in autumn its leaves turn one by one from the outside of
+// the crown in, yellow, orange, then red, and a third of them fall; bare in winter. An apricot is all pink-white
+// blossom in spring, green in summer, yellow in autumn, bare in winter.
 // The crown shades smoothly as one volume, as the willows' strands do.
 import * as THREE from 'three';
 import { patch, WIND_GLSL } from '../core/shared.js';
@@ -12,13 +14,15 @@ import { bankX, bankNormal, BANK_Y } from './layout.js';
 const BARK_COL = [0.6, 0.56, 0.52];
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
-// A card of maple leaves: five lobes each, the two lowest smaller, on short stalks, at a few sizes and turns. Beside
-// it the same leaves each in a grey of its own (0.02..0.98, the gaps black): every leaf's number, so that each turns
-// and falls on its own.
+// The crowns' cards, side by side: on the left a card of maple leaves, five lobes each, the two lowest smaller, on
+// short stalks, at a few sizes and turns; on the right a spray of apricot blossom, five round petals to a flower, a red
+// eye. Beside it the same leaves and flowers each in a grey of its own (0.02..0.98, the gaps black): every one's
+// number, so that each turns and falls on its own.
 function clusterTexture() {
   const S = 256;
   const c = document.createElement('canvas'), ci = document.createElement('canvas');
-  c.width = c.height = ci.width = ci.height = S;
+  c.width = ci.width = S * 2;
+  c.height = ci.height = S;
   const g = c.getContext('2d'), gi = ci.getContext('2d');
   gi.fillStyle = '#000';
   gi.fillRect(0, 0, S, S);
@@ -61,6 +65,29 @@ function clusterTexture() {
       ctx.restore();
     }
   }
+  for (let k = 0; k < 26; k++) {
+    const r = R.range(9, 16);
+    const x = S + R.range(r + 3, S - r - 3), y = R.range(r + 3, S - r - 3), rot = R.range(0, Math.PI);
+    const pink = R.range(0, 1);
+    const id = Math.round((0.02 + 0.96 * R.next()) * 255);
+    for (const [ctx, fill] of [[g, `rgb(250, ${Math.round(236 - 26 * pink)}, ${Math.round(238 - 18 * pink)})`], [gi, `rgb(${id}, ${id}, ${id})`]]) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(rot);
+      ctx.fillStyle = fill;
+      for (let l = 0; l < 5; l++) {
+        const th = (l / 5) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.ellipse(Math.cos(th) * r * 0.5, Math.sin(th) * r * 0.5, r * 0.52, r * 0.42, th, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (ctx === g) {
+        ctx.fillStyle = 'rgb(196, 86, 96)';
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.22, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
   const tex = (cv, srgb) => {
     const t = new THREE.CanvasTexture(cv);
     if (srgb) t.colorSpace = THREE.SRGBColorSpace;
@@ -70,16 +97,18 @@ function clusterTexture() {
   return { map: tex(c, true), id: tex(ci, false) };
 }
 
-// One maple into the kit (its wood) and into cards (its leaf cards, in world space); its crown into crowns, for the
-// falling leaves. Its local frame is the willows': origin on the bank's edge, +z out over the water.
+// One maple or apricot (tree.apricot) into the kit (its wood) and into cards (its crown's cards, in world space); its
+// crown into crowns, for the falling leaves and petals. Its local frame is the willows': origin on the bank's edge, +z
+// out over the water.
 export function buildMaple(kit, tree, cards, crowns) {
   const R = rng(tree.seed + 7);
+  const kind = tree.apricot ? 1 : 0;
   const n = bankNormal(tree.z, tree.side);
   const rot = Math.atan2(-n.x, -n.z);
   const ox = bankX(tree.z, tree.side), oz = tree.z;
   kit.at(ox, BANK_Y, oz, rot);
   const m = new THREE.Matrix4().makeRotationY(rot).setPosition(ox, BANK_Y, oz);
-  const S = tree.scale;
+  const S = tree.scale * (kind ? 0.85 : 1);
   const lean = R.range(0.1, 0.35);
   const trunk = [V(0, -0.1, -1.0), V(R.range(-0.08, 0.08), 1.0 * S, -1.0 + lean * 0.25), V(R.range(-0.1, 0.1), 2.0 * S, -1.0 + lean * 0.6), V(R.range(-0.12, 0.12), 2.7 * S, -1.0 + lean)];
   kit.tube('bark', trunk, [0.21 * S, 0.17 * S, 0.14 * S, 0.12 * S], 9, { col: BARK_COL });
@@ -124,8 +153,8 @@ export function buildMaple(kit, tree, cards, crowns) {
       const p = w.clone().addScaledVector(t, (u - 0.5) * 2 * s).addScaledVector(b, (v - 0.5) * 2 * s);
       cards.pos.push(p.x, p.y, p.z);
       cards.nrm.push(nv.x, nv.y, nv.z);
-      cards.uv.push(u, v);
-      cards.leaf.push(shell, R.next(), p.y - BANK_Y);
+      cards.uv.push((u + kind) * 0.5, v);
+      cards.leaf.push(shell, R.next(), p.y - BANK_Y, kind);
     }
     cards.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
   };
@@ -134,45 +163,55 @@ export function buildMaple(kit, tree, cards, crowns) {
     const a = R.next() * Math.PI * 2, e = Math.sqrt(R.next());
     card(crown.clone().add(V(Math.cos(a) * e * CR * 0.85, R.range(-0.5, 0.75) * CR * 0.7, Math.sin(a) * e * CR * 0.85)));
   }
-  crowns.push({ x: wc.x, y: wc.y, z: wc.z, r: CR, kind: 1 });
+  crowns.push({ x: wc.x, y: wc.y, z: wc.z, r: CR, kind: kind ? 2 : 1 });
 }
 
-// all the maples' leaf cards as one mesh
+// all the maples' and apricots' cards as one mesh
 export function mapleLeaves(cards) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(cards.pos, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(cards.nrm, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(cards.uv, 2));
-  g.setAttribute('aLeaf', new THREE.Float32BufferAttribute(cards.leaf, 3));
+  g.setAttribute('aLeaf', new THREE.Float32BufferAttribute(cards.leaf, 4));
   g.setIndex(cards.idx);
   g.computeBoundingSphere();
   const tex = clusterTexture();
   const mat = patch(new THREE.MeshStandardMaterial({ map: tex.map, alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.75 }), {
     key: 'maple',
     wet: 0.5,
-    gloss: 0.5,
+    gloss: 0.3,
     snow: 0.6,
     uniforms: { tLeafId: { value: tex.id } },
-    vertexHead: `attribute vec3 aLeaf; varying vec2 vJnLeaf;\n${WIND_GLSL}`,
-    fragHead: 'uniform sampler2D tLeafId; varying vec2 vJnLeaf;',
+    vertexHead: `attribute vec4 aLeaf; varying vec3 vJnLeaf;\n${WIND_GLSL}`,
+    fragHead: 'uniform sampler2D tLeafId; varying vec3 vJnLeaf;',
     hooks: {
       // the crown sways with the gusts, more toward its top, and each card flutters a little on its own
       vertex: /* glsl */ `
-        vJnLeaf = aLeaf.xy;
+        vJnLeaf = aLeaf.xyw;
         transformed += sfWindOffset(transformed, aLeaf.z * 0.6, 0.5);
         transformed.y += sin(uTime * 3.1 + aLeaf.y * 40.0) * 0.012 * (0.3 + uWind.z);`,
-      // Spring's leaves a tender, lighter green, summer's a deep one. In autumn each leaf turns on its own, those on the outside of the
-      // crown first: a few only to yellow, more to orange, most to red; a third of them fall, one by one, and in
-      // winter the rest. vJnLeaf: how far out in the crown the card is, and its own number
+      // A maple's leaves are a tender, lighter green in spring, a deep one in summer. In autumn each leaf turns on its
+      // own, those on the outside of the crown first: a few only to yellow, more to orange, most to red; a third of
+      // them fall, one by one, and in winter the rest. An apricot's blossom is out in spring, and in the other seasons
+      // its card stands for leaves: green, then yellow, then gone. vJnLeaf: how far out in the crown the card is, its
+      // own number, and which tree
       alpha: /* glsl */ `
         {
           float jnId = texture2D(tLeafId, vMapUv).r;
           float jnLeafM = smoothstep(0.005, 0.02, jnId);
           float jnP = fract((jnId - 0.02) / 0.96 + vJnLeaf.y * 0.618);
           float jnL = dot(diffuseColor.rgb, vec3(0.3, 0.55, 0.15)) / 0.28;
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.17, 0.33, 0.05) * jnL, uSeason.x * 0.7);
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.07, 0.19, 0.035) * jnL, uSeason.y * 0.85);
-          if (uSeason.z > 0.001) {
+          if (vJnLeaf.z > 0.5) {
+            // the blossom glows a little where the light comes through it
+            jnL = dot(diffuseColor.rgb, vec3(0.3, 0.55, 0.15)) / 0.85;
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.1, 0.22, 0.04) * jnL, uSeason.y * 0.9);
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.5, 0.38, 0.05) * jnL, uSeason.z * 0.9);
+            diffuseColor.a *= 1.0 - jnLeafM * step(jnP, 0.4) * step(0.5, uSeason.z);
+          } else {
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.12, 0.25, 0.035) * jnL, uSeason.x * 0.85);
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.07, 0.19, 0.035) * jnL, uSeason.y * 0.85);
+          }
+          if (uSeason.z > 0.001 && vJnLeaf.z < 0.5) {
             float turn = (1.0 - vJnLeaf.x) * 0.4 + fract(jnP * 5.3) * 0.35;
             vec3 ac = mix(mix(vec3(0.6, 0.4, 0.035), vec3(0.62, 0.17, 0.02), smoothstep(0.15, 0.3, jnP)), vec3(0.42, 0.035, 0.02), smoothstep(0.45, 0.6, jnP));
             diffuseColor.rgb = mix(diffuseColor.rgb, ac * jnL * (0.85 + 0.3 * fract(jnP * 11.0)), smoothstep(turn, turn + 0.2, uSeason.z) * jnLeafM);
@@ -180,6 +219,7 @@ export function mapleLeaves(cards) {
           }
           diffuseColor.a *= step(uSeason.w * 1.02, jnP);
         }`,
+      preLight: 'if (vJnLeaf.z > 0.5) totalEmissiveRadiance += diffuseColor.rgb * (uAmbUp * 0.12 + uSkyHor * 0.05) * uSeason.x;',
     },
   });
   const mesh = new THREE.Mesh(g, mat);

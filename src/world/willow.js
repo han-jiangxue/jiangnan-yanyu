@@ -1,7 +1,7 @@
 // Weeping willows (垂柳): a trunk leaning out over the water, a few limbs arching up and out, and a couple of hundred
 // hanging strands of narrow leaves. The strands are ribbons turned to face the camera about their own line; the wind
 // swings them in the vertex shader, more toward the tip, and over the canal their tips trail just above the water.
-// A few of their places go to maples (world/maple.js), built here alongside them.
+// A few of their places go to maples and apricots (world/maple.js), built here alongside them.
 import * as THREE from 'three';
 import { Kit } from './kit.js';
 import { patch, WIND_GLSL, U } from '../core/shared.js';
@@ -89,14 +89,19 @@ export function planWillows(piers = []) {
     && !SLAB_BRIDGES.some((b) => t.z > b.z - 5 && t.z < b.z + 8));
   // and maples (world/maple.js) stand in a few of their places: both ends of the bridge (the upstream one also closes
   // the corridor), just past the gate, where the corridor begins, and by the lotus at the far end of the canal
-  for (const [side, z] of MAPLES) {
+  // and apricots in a few more: where the corridor begins (深巷明朝卖杏花), just past the bridge (沾衣欲湿杏花雨), and
+  // along the homes beyond it
+  for (const [side, z, apricot] of [...MAPLES.map((m) => [...m, false]), ...APRICOTS.map((m) => [...m, true])]) {
     let best = null;
     for (const t of list) if (t.side === side && !t.maple && Math.abs(t.z - z) < 9 && (!best || Math.abs(t.z - z) < Math.abs(best.z - z))) best = t;
-    if (best) best.maple = true;
+    if (!best) continue;
+    best.maple = true;
+    best.apricot = apricot;
   }
   return list;
 }
 const MAPLES = [[1, -78], [-1, -104], [1, 38], [1, 11], [-1, -220]];
+const APRICOTS = [[1, -1], [-1, -116], [-1, -133], [-1, -176]];
 
 export function createWillows(mats, plan) {
   const kit = new Kit();
@@ -275,7 +280,7 @@ export function createWillows(mats, plan) {
     group.add(maples);
     group.userData.update = () => { maples.visible = U.uSeason.value.w < 0.99; };
   } else group.userData.update = () => {};
-  group.userData.stats = { trees: plan.length, maples: plan.filter((t) => t.maple).length, strandVerts: pos.length / 3 };
+  group.userData.stats = { trees: plan.length, maples: plan.filter((t) => t.maple && !t.apricot).length, apricots: plan.filter((t) => t.apricot).length, strandVerts: pos.length / 3 };
   group.userData.crowns = crowns;
   return group;
 }

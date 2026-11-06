@@ -8,7 +8,8 @@ import { Kit } from './kit.js';
 import { patch } from '../core/shared.js';
 import { LAYER_DYN } from '../core/pipeline.js';
 import { createLocalDrips } from '../fx/drips.js';
-import { rng } from '../lib/math.js';
+import { face } from './people.js';
+import { rng, smoothstep } from '../lib/math.js';
 
 const LEN = 7.2, HALF = LEN / 2, BEAM = 0.66;
 export const hullW = (z) => BEAM * Math.pow(Math.max(0, 1 - Math.pow(Math.abs(z) / HALF, 2.4)), 0.55);
@@ -22,7 +23,7 @@ function hullPt(z, a, inset = 0) {
 const FLOOR_Y = 0.07;
 const PIN = new THREE.Vector3(0.18, sheer(-3.05) + 0.16, -3.05);
 const MAN = new THREE.Vector3(0.05, sheer(-2.45) - 0.05, -2.45);
-const HANDLE = new THREE.Vector3(0, 0.78, 0.86); // on the oar, from the pin
+const HANDLE = new THREE.Vector3(0, 0.84, 1.12); // on the oar, from the pin: out in front of the boatman's cape
 
 let shared = null;
 function canvasTex(w, h, draw, repeat = true) {
@@ -40,16 +41,28 @@ function canvasTex(w, h, draw, repeat = true) {
 function boatMaterials(mats, tex) {
   if (shared) return shared;
   const R = rng(81);
-  // black bamboo matting, woven on the bias
-  const weave = canvasTex(128, 128, (g, w, h) => {
-    const s = 8;
+  // Split-bamboo matting woven two over two, tarred and sooted black (乌篷): strips of uneven width and tone, worn a
+  // little paler along their edges, the weave soft rather than a crisp pattern
+  // (strips about two and a half centimetres wide on the awning, a shallow difference between those on top and those
+  // under, each strip its own tone, with a few knots and scuffs: a mat, not a fabric)
+  const weave = canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = 'rgb(34, 29, 24)';
+    g.fillRect(0, 0, w, h);
+    const s = 16;
+    const across = Array.from({ length: w / s }, () => R.range(-4, 4)), along = Array.from({ length: h / s }, () => R.range(-4, 4));
     for (let y = 0; y < h; y += s) for (let x = 0; x < w; x += s) {
-      const over = ((x / s + y / s) >> 1) % 2 === 0;
-      const l = (over ? 34 : 18) + R.range(-6, 6);
-      g.fillStyle = `rgb(${l + 4}, ${l + 2}, ${l - 2})`;
+      const i = x / s, j = y / s;
+      const over = ((i + j) >> 1) % 2 === 0;
+      const l = (over ? 40 : 31) + (over ? along[j] : across[i]) * 1.5 + R.range(-2, 2);
+      g.fillStyle = `rgb(${l + 5}, ${l + 1}, ${l - 4})`;
       g.fillRect(x, y, s, s);
-      g.fillStyle = `rgba(255, 240, 210, ${over ? 0.06 : 0.02})`;
-      g.fillRect(x, y + (over ? 1 : 5), s, 1);
+      // the strip's soft edges
+      g.fillStyle = 'rgba(0, 0, 0, 0.18)';
+      if (over) { g.fillRect(x, y, s, 1); g.fillRect(x, y + s - 1, s, 1); } else { g.fillRect(x, y, 1, s); g.fillRect(x + s - 1, y, 1, s); }
+    }
+    for (let k = 0; k < 40; k++) {
+      g.fillStyle = `rgba(${R.next() < 0.5 ? '120, 100, 80' : '0, 0, 0'}, ${R.range(0.05, 0.14)})`;
+      g.fillRect(R.next() * w, R.next() * h, R.range(2, 10), R.range(1, 3));
     }
   });
   // straw: a solid layer of strands, ragged at the hem (the canvas's top row is the lathe's last profile point)
@@ -71,28 +84,57 @@ function boatMaterials(mats, tex) {
   // a boat carries its rain and snow under the bridges with it
   const mk = (key, params, o = {}) => patch(new THREE.MeshStandardMaterial({ vertexColors: true, ...params }), { key, carried: true, ...o });
   shared = {
-    hull: mk('boat-hull', { map: tex.old_planks_02_c, normalMap: tex.old_planks_02_n, color: 0x2c2420, roughness: 0.5 }, { wet: 0.4, gloss: 0.6 }),
+    // Planks oiled with tung oil (桐油) and gone dark with years of it: a seam between each strake, no two strakes quite
+    // the same brown, the wood worn paler along the gunwale where hands and ropes rub it, and a wet dark band with a
+    // green skin of weed at the waterline. Oiled, not lacquered: it hardly shines unless wet
+    hull: mk('boat-hull', { map: tex.old_planks_02_c, normalMap: tex.old_planks_02_n, normalScale: new THREE.Vector2(0.8, 0.8), color: 0x6a5038, roughness: 0.82 }, {
+      wet: 0.4,
+      gloss: 0.35,
+      hooks: {
+        map: /* glsl */ `
+          {
+            float jnS = clamp(vMapUv.x / 2.2, 0.0, 1.0);
+            float jnK = jnS * 18.0;
+            float jnId = floor(jnK);
+            diffuseColor.rgb *= 0.78 + 0.4 * fract(sin(jnId * 91.7 + 3.1) * 43758.5453);
+            diffuseColor.rgb *= 1.0 - 0.7 * smoothstep(0.4, 0.5, abs(fract(jnK) - 0.5));
+            // grain and grime along the length, at the scale of the planks
+            diffuseColor.rgb *= 0.85 + 0.3 * sfNoise(vec2(vMapUv.y * 3.0, jnId * 1.7));
+            float jnWear = smoothstep(0.09, 0.0, min(jnS, 1.0 - jnS));
+            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.9, 1.75, 1.5), jnWear * 0.7);
+            float jnWl = smoothstep(0.14, 0.02, vSfWP.y);
+            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.55, 0.62, 0.5), jnWl);
+          }`,
+      },
+    }),
     // no snow on the floor and the decks: a boat moves, so the rain-occlusion map cannot keep it out from under the
     // awnings, and the boatman sweeps his decks
     inner: mk('boat-inner', { map: tex.weathered_planks_c, color: 0x9a8270, roughness: 0.8 }, { wet: 0.4, gloss: 0.4, snow: 0 }),
     // the matting is tarred black outside; seen from under it (the back faces) it is split bamboo, warm and pale
-    awning: mk('boat-awning', { map: weave, roughness: 0.65, side: THREE.DoubleSide }, {
+    awning: mk('boat-awning', { map: weave, roughness: 0.9, side: THREE.DoubleSide }, {
       wet: 0.3,
-      gloss: 0.55,
+      gloss: 0.15,
       hooks: {
         map: /* glsl */ `
-          if (!gl_FrontFacing) {
+          // outside: soot and dust lying unevenly, and patches where the old tar has worn through to brown
+          if (gl_FrontFacing) {
+            diffuseColor.rgb *= 0.75 + 0.5 * sfNoise(vMapUv * vec2(0.6, 1.2) + 3.7);
+            float jnWorn = smoothstep(0.5, 0.8, sfNoise(vMapUv * vec2(1.3, 2.1) + 11.0));
+            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(2.2, 1.75, 1.25), jnWorn * 0.75);
+          }
+          else {
             float jnL = dot(diffuseColor.rgb, vec3(0.333));
             diffuseColor.rgb = vec3(0.34, 0.24, 0.13) * clamp(0.75 + 0.25 * (jnL / 0.012 - 1.0), 0.72, 1.18);
           }`,
       },
     }),
-    bamboo: mk('boat-bamboo', { map: tex.old_planks_02_c, color: 0xa08a62, roughness: 0.6 }, { wet: 0.4, gloss: 0.5 }),
+    bamboo: mk('boat-bamboo', { map: tex.old_planks_02_c, color: 0xa08a62, roughness: 0.75 }, { wet: 0.4, gloss: 0.35 }),
     // the cape is palm fibre, dark and shaggy; the hat split bamboo, pale
     straw: mk('boat-straw', { map: straw, color: 0x6a5840, alphaTest: 0.3, side: THREE.DoubleSide, roughness: 0.95 }, { wet: 0.6, gloss: 0.25 }),
     hat: mk('boat-hat', { map: straw, color: 0xf2e2c0, alphaTest: 0.3, side: THREE.DoubleSide, roughness: 0.85 }, { wet: 0.4, gloss: 0.3 }),
     cloth: mk('boat-cloth', { color: 0x1c2233, roughness: 0.95 }, { wet: 0.5, gloss: 0.2 }),
-    skin: mk('boat-skin', { color: 0xb08a72, roughness: 0.7 }, { wet: 0.2, gloss: 0.3 }),
+    // weathered, sunburnt
+    skin: mk('boat-skin', { color: 0x7a5844, roughness: 0.75 }, { wet: 0.2, gloss: 0.3 }),
     paper: mats.paper,
   };
   return shared;
@@ -121,6 +163,12 @@ function buildHull(kit) {
     for (let i = 0; i <= NZ; i++) pts.push(new THREE.Vector3(...hullPt(zAt(i / NZ), a, 0.017)).add(new THREE.Vector3(0, 0.015, 0)));
     kit.tube('bamboo', pts, pts.map(() => 0.03), 6, { col: [0.55, 0.45, 0.36] });
   }
+  // a rubbing strake (护舷) along each side a little below the gunwale
+  for (const a of [-Math.PI / 2 + 0.42, Math.PI / 2 - 0.42]) {
+    const pts = [];
+    for (let i = 2; i <= NZ - 2; i++) pts.push(new THREE.Vector3(...hullPt(zAt(i / NZ), a, -0.012)));
+    kit.tube('bamboo', pts, pts.map(() => 0.02), 5, { col: [0.32, 0.26, 0.2] });
+  }
   for (const zs of [-1, 1]) {
     const z = zs * (HALF - 0.02);
     kit.box('hull', 0, (sheer(z) - 0.2) / 2, z, 0.08, sheer(z) + 0.2, 0.08, {});
@@ -139,7 +187,14 @@ function buildAwnings(kit) {
   for (const [z0, z1, H] of AWNINGS) {
     const base = awningBase(z0, z1);
     const Wa = 0.7;
-    const P = (th, z) => [Wa * Math.sin(th), base + H * Math.cos(th), z];
+    // the matting stands out a little over each hoop and sags between them, and is never quite even
+    const hoops = [0, 1, 2, 3].map((k) => z0 + ((k + 0.5) / 4) * (z1 - z0));
+    const swell = (th, z) => {
+      const near = Math.min(...hoops.map((hz) => Math.abs(z - hz)));
+      const lump = Math.sin(th * 7.3 + z * 9.1) * Math.sin(z * 17.0 + th * 3.0);
+      return 0.007 * Math.exp(-near * near * 900) - 0.016 * smoothstep(0.03, 0.16, near) + 0.006 * lump;
+    };
+    const P = (th, z) => { const r = 1 + swell(th, z) * Math.cos(th * 0.5); return [Wa * r * Math.sin(th), base + H * r * Math.cos(th), z]; };
     // a point just inside the shell: stepped in along the arch's inward normal
     const Pin = (th, z, d) => {
       const nx = Math.sin(th) / Wa, ny = Math.cos(th) / H, l = Math.hypot(nx, ny);
@@ -150,7 +205,7 @@ function buildAwnings(kit) {
     for (const z of [z0 + 0.03, z1 - 0.03]) {
       const pts = [];
       for (let i = 0; i <= 32; i++) pts.push(new THREE.Vector3(...P((i / 32 - 0.5) * Math.PI, z)).multiply(new THREE.Vector3(1.03, 1, 1)).add(new THREE.Vector3(0, 0.02, 0)));
-      kit.tube('bamboo', pts, pts.map(() => 0.022), 5, {});
+      kit.tube('bamboo', pts, pts.map(() => 0.024), 6, { col: [0.8, 0.66, 0.48] });
     }
     // inside: bamboo hoops holding the matting up, and a batten along the ridge, what the seat looks up at
     for (let k = 0; k < 4; k++) {
@@ -242,12 +297,20 @@ function buildOar(kit) {
 }
 
 // the boatman, built about his feet facing +z: legs fixed, the upper body (cape, head, hat) on a pivot at the hips
-// so it can lean into each stroke, and two arms reaching for the oar's handle
+// so it can lean into each stroke, and two arms reaching for the oar's handle, each an upper arm and a forearm bent
+// at the elbow, his hands round the handle
 function buildBoatman(mats) {
   const group = new THREE.Group();
   const legs = new Kit();
   legs.at(0, 0, 0, 0);
-  for (const sx of [-1, 1]) legs.cyl('cloth', sx * 0.09, 0.42, 0, 0.065, 0.075, 0.84, { sides: 8 });
+  for (const sx of [-1, 1]) {
+    // trousers rolled to below the knee, bare shins, straw sandals
+    legs.cyl('cloth', sx * 0.09, 0.66, 0, 0.07, 0.078, 0.4, { sides: 8 });
+    legs.cyl('cloth', sx * 0.09, 0.47, 0, 0.082, 0.082, 0.05, { sides: 8, col: [1.3, 1.3, 1.3] });
+    legs.cyl('skin', sx * 0.09, 0.25, 0.005, 0.045, 0.036, 0.42, { sides: 7 });
+    legs.box('skin', sx * 0.09, 0.035, 0.05, 0.075, 0.05, 0.19);
+    legs.box('bamboo', sx * 0.09, 0.008, 0.05, 0.09, 0.016, 0.23, { col: [1.2, 1.1, 0.85] });
+  }
   const lower = legs.build(mats, 'boatman-legs');
   group.add(lower);
   const upper = new THREE.Group();
@@ -258,22 +321,38 @@ function buildBoatman(mats) {
   for (const tier of [[[0.12, 0.57], [0.22, 0.51], [0.3, 0.37], [0.35, 0.2]], [[0.27, 0.3], [0.34, 0.12], [0.39, -0.06]], [[0.33, 0.02], [0.39, -0.17], [0.44, -0.37]]]) {
     k.add('straw', new THREE.LatheGeometry(tier.map(([r, y]) => new THREE.Vector2(r, y)), 16), { keepUv: true, rawUv: true });
   }
-  k.cyl('skin', 0, 0.6, 0.02, 0.05, 0.055, 0.1, { sides: 8 });
-  k.add('skin', new THREE.SphereGeometry(0.1, 12, 10), { local: new THREE.Matrix4().makeTranslation(0, 0.71, 0.02) });
+  const at = (x, y, z, sx = 1, sy = 1, sz = 1) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion(), new THREE.Vector3(sx, sy, sz));
+  k.cyl('skin', 0, 0.6, 0.02, 0.045, 0.052, 0.12, { sides: 8 });
+  // the head a little long, the jaw below it, ears, a short nose; the hair black over the back of the head and down to
+  // the nape, gathered in a knot under the hat
+  k.add('skin', new THREE.SphereGeometry(0.1, 14, 12), { local: at(0, 0.72, 0.02, 0.92, 1.12, 1.0) });
+  k.add('skin', new THREE.SphereGeometry(0.07, 10, 8), { local: at(0, 0.66, 0.045, 1.0, 0.8, 1.0) });
+  for (const sx of [-1, 1]) k.add('skin', new THREE.SphereGeometry(0.022, 6, 5), { local: at(sx * 0.1, 0.712, 0.012, 0.5, 1, 0.8) });
+  face(k, 0.715, 0.022, 'skin', { ink: [0.12, 0.1, 0.09], lip: [0.62, 0.42, 0.38], skin: [1, 1, 1] });
+  k.add('cloth', new THREE.SphereGeometry(0.104, 14, 12), { local: at(0, 0.735, -0.012, 0.93, 1.1, 1.0), col: [0.22, 0.2, 0.18] });
+  k.add('cloth', new THREE.SphereGeometry(0.04, 8, 6), { local: at(0, 0.83, -0.03), col: [0.22, 0.2, 0.18] });
   // the hat: a wide, shallow cone of split bamboo
   k.add('hat', new THREE.ConeGeometry(0.37, 0.17, 18, 1, true), { local: new THREE.Matrix4().makeTranslation(0, 0.86, 0.02), keepUv: true, rawUv: true });
   k.add('hat', new THREE.ConeGeometry(0.37, 0.17, 18, 1, true).scale(1, -0.15, 1), { local: new THREE.Matrix4().makeTranslation(0, 0.79, 0.02), keepUv: true, rawUv: true });
   upper.add(k.build(mats, 'boatman-upper'));
   group.add(upper);
-  // arms: a unit cylinder each, stretched from shoulder to hand every frame
-  const armGeo = new THREE.CylinderGeometry(0.05, 0.045, 1, 7);
-  armGeo.translate(0, 0.5, 0);
-  const arms = [new THREE.Mesh(armGeo, mats.straw), new THREE.Mesh(armGeo, mats.straw)];
-  for (const a of arms) { a.castShadow = true; group.add(a); }
+  // the arms: a unit cylinder for each segment, stretched between its joints every frame, and a hand at the end
+  const seg = new THREE.CylinderGeometry(0.048, 0.042, 1, 7);
+  seg.translate(0, 0.5, 0);
+  const handGeo = new THREE.SphereGeometry(0.038, 8, 6).scale(0.8, 1.15, 1.0);
+  const arms = [0, 1].map(() => ({ upper: new THREE.Mesh(seg, mats.straw), fore: new THREE.Mesh(seg, mats.cloth), hand: new THREE.Mesh(handGeo, mats.skin) }));
+  for (const a of arms) for (const m of [a.upper, a.fore, a.hand]) { m.castShadow = true; group.add(m); }
   return { group, upper, arms };
 }
 
-const _q = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0), _a = new THREE.Vector3(), _b = new THREE.Vector3(), _d = new THREE.Vector3();
+const _q = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0), _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3(), _e = new THREE.Vector3();
+const ARM = 0.34; // upper arm, and forearm to the palm
+// a unit segment (a cylinder from y = 0 to 1) stretched from p to q
+const bone = (m, p, q) => {
+  m.position.copy(p);
+  m.quaternion.copy(_q.setFromUnitVectors(_up, _d.subVectors(q, p).normalize()));
+  m.scale.set(1, Math.max(0.01, p.distanceTo(q)), 1);
+};
 
 export class Boat {
   constructor(mats, tex, o = {}) {
@@ -350,12 +429,20 @@ export class Boat {
         // the shoulder turns with the upper body about the hips
         _a.set(sx * 0.21, 0.44, 0.04).applyEuler(man.upper.rotation);
         _a.y += 0.86;
-        _b.copy(this._hand).add(_d.set(sx * 0.07, 0, sx * 0.04));
-        const len = Math.max(0.2, _a.distanceTo(_b));
+        _b.copy(this._hand).add(_d.set(sx * 0.06, 0, sx * 0.03));
+        // the elbow: two bones of ARM each, bent down and out (toward the pole) as far as the reach needs
+        _d.subVectors(_b, _a);
+        const dist = Math.min(Math.max(_d.length(), 0.08), ARM * 2 - 0.002);
+        _d.normalize();
+        _b.copy(_a).addScaledVector(_d, dist);
+        _e.set(sx * 0.7, -1, -0.15);
+        _e.addScaledVector(_d, -_e.dot(_d)).normalize();
+        _c.copy(_a).addScaledVector(_d, dist / 2).addScaledVector(_e, Math.sqrt(Math.max(0, ARM * ARM - dist * dist / 4)));
         const arm = man.arms[i];
-        arm.position.copy(_a);
-        arm.quaternion.copy(_q.setFromUnitVectors(_up, _d.subVectors(_b, _a).normalize()));
-        arm.scale.set(1, len, 1);
+        bone(arm.upper, _a, _c);
+        bone(arm.fore, _c, _b);
+        arm.hand.position.copy(_b);
+        arm.hand.quaternion.copy(arm.fore.quaternion);
       }
     }
     // the lanterns, for the lamps

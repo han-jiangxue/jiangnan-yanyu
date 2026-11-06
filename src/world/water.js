@@ -155,8 +155,9 @@ export function createWater(reflection) {
     uBoatP: { value: [new THREE.Vector4(0, -1e4, 0, 0), new THREE.Vector4(0, -1e4, 0, 0)] },
     // the rectangle (min x, min z, max x, max z) each boat's wake can reach; outside it the wake is not worked out
     uWakeBox: { value: [new THREE.Vector4(0, 0, -1, -1), new THREE.Vector4(0, 0, -1, -1)] },
-    // the maples (x, z, crown radius), whose red leaves float near them in autumn
-    uMaples: { value: Array.from({ length: 6 }, () => new THREE.Vector4(0, 0, 0, 0)) },
+    // the maples and apricots (x, z, crown radius, 1 maple or 2 apricot): red leaves float near the maples in autumn,
+    // petals near the apricots in spring
+    uTrees: { value: Array.from({ length: 10 }, () => new THREE.Vector4(0, 0, 0, 0)) },
   };
   const mat = new THREE.ShaderMaterial({
     uniforms,
@@ -181,7 +182,7 @@ export function createWater(reflection) {
       uniform vec2 uRes, uNearFar, uZRange;
       uniform mat4 uReflMat;
       uniform vec4 uWake0[16], uWake1[16], uBoatP[2], uWakeBox[2];
-      uniform vec4 uMaples[6];
+      uniform vec4 uTrees[10];
 
       // Kelvin ship waves by stationary phase (from Sakura Fantasy): x metres behind the bow and y off its track, the
       // transverse and divergent systems inside the 19.47 degree wedge. Returns the surface's gradient (d/dx, d/dy);
@@ -298,7 +299,7 @@ export function createWater(reflection) {
       // Fallen leaves afloat in autumn: at most one in each cell of a grid laid along the canal, every column of cells
       // carried down by the current at its own pace (so a leaf keeps its shape as it goes) and turning slowly; more of
       // them along the banks, where the water is slack, some broad ones among the willows' narrow ones, and red maple
-      // leaves near the maples. rgb: the leaf's own colour, a: how much of the pixel it covers (gone once it is
+      // leaves near the maples. In spring, apricot petals near the apricots. rgb: the leaf's own colour, a: how much of the pixel it covers (gone once it is
       // narrower than a pixel, before it can shimmer). pxMin, pxAA: metres per pixel across the view and on average
       vec4 floatingLeaf(vec3 wp, vec4 cv, float pxMin, float pxAA){
         const float CS = 0.55;
@@ -308,22 +309,33 @@ export function createWater(reflection) {
         float zs = wp.z + v * uTime;
         vec2 cell = vec2(colm, floor(zs / CS));
         float h = sfHash12(cell * 1.37 + 0.5);
-        float dens = uSeason.z * mix(0.08, 0.42, smoothstep(0.4, 0.95, abs(acrossC)));
+        if (h > uSeason.z * 0.42 + uSeason.x * 0.6) return vec4(0.0);
+        float maple = 0.0, apricot = 0.0;
+        for (int i = 0; i < 10; i++) {
+          vec4 m = uTrees[i];
+          if (m.z <= 0.0) continue;
+          float k = smoothstep(m.z * 1.8, m.z * 0.5, distance(wp.xz, m.xy));
+          if (m.w > 1.5) apricot = max(apricot, k);
+          else maple = max(maple, k);
+        }
+        // the petals take the lowest share of the cells, the leaves the rest
+        float petals = uSeason.x * apricot * 0.6;
+        float dens = petals + uSeason.z * mix(0.08, 0.42, smoothstep(0.4, 0.95, abs(acrossC)));
         if (h > dens) return vec4(0.0);
         float h2 = sfHash12(cell + 11.3), h3 = sfHash12(cell + 23.9), h4 = sfHash12(cell + 37.1);
         vec2 q = vec2(wp.x, zs) - (cell + 0.3 + 0.4 * vec2(h2, h3)) * CS;
         float ang = h4 * 6.2832 + uTime * 0.06 * (h2 - 0.5);
         float ca = cos(ang), sa = sin(ang);
         vec2 lq = vec2(ca * q.x + sa * q.y, -sa * q.x + ca * q.y);
-        float maple = 0.0;
-        for (int i = 0; i < 6; i++) {
-          vec4 m = uMaples[i];
-          if (m.z > 0.0) maple = max(maple, smoothstep(m.z * 1.8, m.z * 0.5, distance(wp.xz, m.xy)));
-        }
         float size, sd;
         vec3 c;
         float kind = fract(h4 * 7.7);
-        if (kind < maple * 0.85) {
+        if (h < petals) {
+          // a petal: round, white flushed with pink
+          size = 0.025 + 0.012 * h3;
+          sd = length(lq * vec2(1.0, 1.25)) - size;
+          c = mix(vec3(0.88, 0.8, 0.8), vec3(0.86, 0.62, 0.66), h2);
+        } else if (kind < maple * 0.85) {
           // a maple's: five pointed lobes
           size = 0.07 + 0.04 * h3;
           float th = atan(lq.y, lq.x), r = length(lq);
@@ -461,7 +473,7 @@ export function createWater(reflection) {
 
         // lantern glints: each lamp's image smeared into a column by the ripples, and broken across it into the
         // flecks and dashes a ruffled surface makes of a light; and the light a lamp throws on a floating leaf
-        vec4 leaf = uSeason.z > 0.001 ? floatingLeaf(wp, cv, min(footS, footF), sqrt(footS * footF)) : vec4(0.0);
+        vec4 leaf = uSeason.z + uSeason.x > 0.001 ? floatingLeaf(wp, cv, min(footS, footF), sqrt(footS * footF)) : vec4(0.0);
         vec3 leafLamp = vec3(0.0);
         float flecks = smoothstep(0.42, 0.75, sfNoise(wp.xz * vec2(2.2, 7.0) + vec2(0.0, uTime * 0.9)) * 0.65 + sfNoise(wp.xz * vec2(6.0, 15.0) - uTime * 0.6) * 0.35 + uRain * 0.08);
         for (int i = 0; i < ${MAX_LAMPS}; i++){

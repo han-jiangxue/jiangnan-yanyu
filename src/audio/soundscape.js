@@ -1,13 +1,13 @@
 // The soundscape: what you hear on the boat. The rain is three things at once: its wash over the whole town, the drops
 // in the canal and on the stones round about, and, under a roof or the boat's awning, the drumming just overhead; a
 // roof over you muffles the open rain, and the bridge's arch rings with it. Snow is near silence: the faintest hiss
-// of the flakes, and what lies on the roofs swallows the echoes. Summer has its cicadas by day and frogs by night,
-// autumn its crickets from dusk on and dry leaves stirring in the wind. Over it all come the single sounds: drips off
-// the eaves, each boatman's oar creaking on its pin and its blade swishing through the water, the water against the
-// hull, thunder after the lightning, and late at night or at first light a temple bell from beyond the roofs. All of
-// it is made in code (audio/synth.js) once sound is on (it starts muted) and a gesture has come, since the browser lets
-// sound start only from one, and a piece at a time so that no frame stalls; thunder, the bell and each season's
-// creatures only when first wanted.
+// of the flakes, and what lies on the roofs swallows the echoes. Spring's mornings have birds, summer has its cicadas
+// by day and frogs by night, autumn its crickets from dusk on and dry leaves stirring in the wind. Over it all come the
+// single sounds: drips off the eaves, each boatman's oar creaking on its pin and its blade swishing through the water,
+// the water against the hull, thunder after the lightning, and late at night or at first light a temple bell from
+// beyond the roofs. All of it is made in code (audio/synth.js) once sound is on (it starts muted) and a gesture has
+// come, since the browser lets sound start only from one, and a piece at a time so that no frame stalls; thunder, the
+// bell and each season's creatures only when first wanted.
 import * as THREE from 'three';
 import * as S from './synth.js';
 import { bankX, inCanal, BANK_Y, LANE_W, CORRIDOR } from '../world/layout.js';
@@ -279,7 +279,7 @@ export class Soundscape {
   }
 
   // Once a frame. s: { live (the journey has begun, or review), veil (the paper is down), rain, wet, wind, hours,
-  // night, daylight, storm, snowFall, snowLying, summer, autumn (the seasons' weights), trees, pond (metres to the
+  // night, daylight, storm, snowFall, snowLying, spring, summer, autumn (the seasons' weights), trees, pond (metres to the
   // nearest crown and the nearest lotus), seat (listening from the seat under the awning), boats (those with a
   // boatman) }
   update(dt, camera, s) {
@@ -336,6 +336,17 @@ export class Soundscape {
         () => {
           this.g.rustle = this.bed(this.buffer(S.grainLoop({ seconds: 5.3, rate: DROP_RATE, perSecond: 70, grain: S.crackle, seed: 71, loud: 2 })), [this.biquad('highpass', 1200, 0.7)], this.mix);
           this.g.leafAir = this.bed(this.noise, [this.biquad('bandpass', 3000, 0.6)], this.mix, { offset: 1.9, rate: 1.05 });
+        });
+    }
+    // birds at first light in spring and summer, a singer at a time
+    if (s.spring + s.summer > 0.05 && this.noise) {
+      let job = null;
+      this.ask('birds',
+        () => { job = S.birdSteps(11.3, LOW_RATE, 101); },
+        ...[0, 1, 2, 3, 4, 5].map((i) => () => job.steps[i]()),
+        () => {
+          this.birdLP = this.biquad('lowpass', 11000, 0.5);
+          this.g.birds = this.bed(this.buffer(job.done()), [this.biquad('highpass', 1500, 0.6), this.birdLP], this.mix);
         });
     }
     // summer's cicadas (made a singer at a time) and frogs, once summer comes
@@ -400,6 +411,14 @@ export class Soundscape {
       const stir = s.autumn * (0.2 + 0.8 * s.wind) * (0.5 + vnoise(this.clock * 0.3, 5.3)) * (1 - 0.7 * smoothstep(0.1, 0.6, rain));
       set(g.rustle.gain, 0.06 * stir);
       set(g.leafAir.gain, 0.02 * stir);
+    }
+    // Spring and summer: the birds at first light and through the morning, a few still about later in the day, quiet in
+    // anything more than a drizzle, nearest the trees; dulled under the awning
+    if (g.birds) {
+      const dawn = smoothstep(4.8, 5.8, s.hours) * (1 - smoothstep(9.5, 11.5, s.hours));
+      const day = 0.25 * smoothstep(0.3, 0.8, s.daylight) * (1 - smoothstep(17.5, 19, s.hours));
+      set(g.birds.gain, 0.07 * clamp(s.spring + 0.6 * s.summer, 0, 1) * Math.max(dawn, day) * (1 - smoothstep(0.15, 0.5, rain)) * (0.4 + 0.6 * smoothstep(45, 8, s.trees)));
+      set(this.birdLP.frequency, lerp(11000, 3000, this.cover));
     }
     // Summer: the cicadas by day while it is dry, loudest in the afternoon heat and under the trees; the frogs from
     // dusk on and in the plum rain, loudest by the lotus, drowned out by a downpour, dulled under the awning

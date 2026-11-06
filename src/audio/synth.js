@@ -1,8 +1,9 @@
 // The sounds, made from numbers: pink noise for the beds, loops of raindrops in the water, on the stones and on a roof
-// just overhead, of dry leaves stirring, of autumn's crickets and summer's cicadas and frogs, and the single sounds: a
-// drip, the oar's creak on its pin and the swish of its blade, thunder, a temple bell, the reverb's tail. Each comes
-// back as plain sample arrays, { rate, chs: [Float32Array, ...] }, at a rate of its own (the low sounds need fewer
-// samples), so nothing here needs an AudioContext, and all of it is deterministic.
+// just overhead, of dry leaves stirring, of birds at dawn, autumn's crickets and summer's cicadas and frogs, and the
+// single sounds: a drip, the oar's creak on its pin and the swish of its blade, thunder, a temple bell, the reverb's
+// tail. Each comes back as plain sample arrays, { rate, chs: [Float32Array, ...] }, at a rate of its own (the low
+// sounds need fewer samples), so nothing here needs an AudioContext, and all of it is deterministic. The longer ones
+// also come in pieces ({ steps, done }), to be spread over a few moments.
 import { rng } from '../lib/math.js';
 
 const TAU = Math.PI * 2;
@@ -213,6 +214,12 @@ export function crickets(seconds, rate, seed) {
   return { rate, chs: level([L, Rt], 0.1) };
 }
 
+// a sound made in pieces, all at once
+const allAtOnce = (job) => {
+  for (const step of job.steps) step();
+  return job.done();
+};
+
 // Summer's cicadas (蝉鸣): each sings in long phrases, a rasping buzz swelling up, holding and dying away, then resting;
 // the buzz is noise rung through the cicada's own band and chopped by its quick pulses. A few of them, near and far,
 // each from its own place in the field. A seamless stereo loop: a phrase running past the end carries on from the start.
@@ -266,12 +273,53 @@ export function cicadaSteps(seconds, rate, seed) {
   return { steps: [singer, singer, singer, singer], done: () => ({ rate, chs: level([L, Rt], 0.12) }) };
 }
 
-// the same, all at once
-export function cicadas(seconds, rate, seed) {
-  const job = cicadaSteps(seconds, rate, seed);
-  for (const step of job.steps) step();
-  return job.done();
+export const cicadas = (seconds, rate, seed) => allAtOnce(cicadaSteps(seconds, rate, seed));
+
+// Birds at first light (春眠不觉晓，处处闻啼鸟): a few singers about the trees and eaves, each with a phrase of its own
+// that it repeats with small changes, sometimes answered, often resting: notes that slide up or down through a few
+// kilohertz with a flutter in them, a trill of quick repeats now and then. A seamless stereo loop, a singer a step.
+export function birdSteps(seconds, rate, seed) {
+  const R = rng(seed);
+  const n = Math.round(seconds * rate);
+  const L = new Float32Array(n), Rt = new Float32Array(n);
+  // one note: a glide from f0 to f1 with a flutter, swelling in and dying away
+  const note = (f0, f1, len, flut) => {
+    const m = Math.round(len * rate), x = new Float32Array(m);
+    let ph = 0;
+    for (let i = 0; i < m; i++) {
+      const t = i / m;
+      const f = f0 + (f1 - f0) * t * (2 - t);
+      ph += (TAU * f * (1 + 0.03 * Math.sin(TAU * flut * (i / rate)))) / rate;
+      x[i] = Math.sin(ph) * Math.sin(Math.PI * Math.min(1, t * 1.15)) * (1 - 0.4 * t);
+    }
+    return x;
+  };
+  const singer = () => {
+    const a = 0.2 + 0.8 * Math.pow(R.next(), 1.6);
+    const p = ((R.next() * 1.8 - 0.9) + 1) * (Math.PI / 4);
+    const gl = Math.cos(p) * a, gr = Math.sin(p) * a;
+    // its phrase: three to seven notes, or a trill
+    const base = R.range(2400, 5200), trill = R.next() < 0.3;
+    const phrase = [];
+    const count = trill ? 8 + Math.floor(R.next() * 8) : 3 + Math.floor(R.next() * 5);
+    for (let k = 0, t = 0; k < count; k++) {
+      const len = trill ? R.range(0.025, 0.04) : R.range(0.05, 0.16);
+      const f0 = base * R.range(0.8, 1.3), f1 = trill ? f0 * R.range(0.85, 0.95) : base * R.range(0.7, 1.5);
+      phrase.push([t, note(f0, f1, len, R.range(18, 40))]);
+      t += len + (trill ? R.range(0.012, 0.02) : R.range(0.03, 0.12));
+    }
+    for (let t = R.range(0, 3); t < seconds; t += R.range(2.5, 7)) {
+      const g = R.range(0.6, 1);
+      for (const [dt, x] of phrase) {
+        if (R.next() < 0.12) continue;
+        for (let i = 0, j = Math.floor((t + dt) * rate) % n; i < x.length; i++, j = j + 1 === n ? 0 : j + 1) { L[j] += x[i] * gl * g; Rt[j] += x[i] * gr * g; }
+      }
+    }
+  };
+  return { steps: Array(6).fill(singer), done: () => ({ rate, chs: level([L, Rt], 0.08) }) };
 }
+
+export const birds = (seconds, rate, seed) => allAtOnce(birdSteps(seconds, rate, seed));
 
 // Summer's frogs (蛙鸣): a chorus in the lotus and along the banks, each frog croaking in short runs of pulses, a hoarse
 // tone (a train of narrow pulses at its pitch) through the resonances of its throat, at its own pitch and pace, near

@@ -386,7 +386,7 @@ function createLotusSummer(ponds) {
   const list = [];
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1), p = new THREE.Vector3();
   for (const [z0, z1, side] of ponds) {
-    for (let k = 0; k < 34; k++) {
+    for (let k = 0; k < 44; k++) {
       const z = R.range(z1, z0);
       const n = bankNormal(z, side);
       const out = R.range(0.25, side < 0 ? 2.6 : 3.0);
@@ -480,9 +480,9 @@ function lotusSummerKit() {
       beginNormal: /* glsl */ `
         float jnH1 = fract(sin(dot(instanceMatrix[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
         float jnH2 = fract(jnH1 * 7.31 + 0.13), jnH3 = fract(jnH1 * 13.7 + 0.71), jnH4 = fract(jnH1 * 3.17 + 0.37);
-        // grown as far as summer has come in; a leaf on six stems in ten, a flower on two, a bud on the rest
+        // grown as far as summer has come in; a leaf on about half the stems, a flower on more than a quarter, a bud on the rest
         float jnG = uSeason.y;
-        float jnRole = jnH1 < 0.62 ? 0.0 : (jnH1 < 0.82 ? 1.0 : 2.0);
+        float jnRole = jnH1 < 0.55 ? 0.0 : (jnH1 < 0.83 ? 1.0 : 2.0);
         float jnHt = (jnRole < 0.5 ? 0.3 + 0.6 * jnH2 : (jnRole < 1.5 ? 0.75 + 0.45 * jnH2 : 0.55 + 0.4 * jnH2)) * jnG;
         // a leaf's stem arches out under its weight and the leaf tips a little; a flower stands straighter
         vec2 jnLd = vec2(cos(jnH3 * 6.283), sin(jnH3 * 6.283));
@@ -510,11 +510,11 @@ function lotusSummerKit() {
           } else if (aPart.y < 1.5) {
             q = top + jnTR * transformed * ((0.24 + 0.2 * jnH3) * jnG * step(jnRole, 0.5));
           } else if (aPart.y < 2.5) {
-            float L = (0.09 + 0.035 * jnH3) * jnG * step(0.5, jnRole);
+            float L = (0.12 + 0.05 * jnH3) * jnG * step(0.5, jnRole);
             float t = aPetal.x, s = aPetal.y;
             q = top + vec3(0.0, 0.012 * jnG, 0.0) + (jnAx * t + jnAc * s + jnIn * (s * s * 1.6 + t * t * (jnRole > 1.5 ? 0.12 : 0.05))) * L;
           } else {
-            q = top + transformed * jnG * step(0.5, jnRole) * step(jnRole, 1.5);
+            q = top + transformed * 1.3 * jnG * step(0.5, jnRole) * step(jnRole, 1.5);
           }
           transformed = q;
         }`,

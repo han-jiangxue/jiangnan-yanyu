@@ -80,7 +80,7 @@ export function createSplash(count, tCanal, awning = []) {
           if (k > 1.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
           float w = (0.02 + 0.045 * k) * big, ht = (0.018 + 0.03 * sqrt(k)) * big;
           wp = p + cr * position.x * w + vec3(0.0, (position.y * 0.5 + 0.5) * ht, 0.0);
-          vAlpha = 0.55 * (1.0 - k);
+          vAlpha = 0.75 * (1.0 - k);
           vCrown = 1.0;
         } else {
           // a bead: up and out, and back down
@@ -89,7 +89,7 @@ export function createSplash(count, tCanal, awning = []) {
           float tb = t - 0.01, tEnd = 2.0 * v0 / 9.8;
           if (tb < 0.0 || tb > tEnd) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
           vec3 c = p + vec3(cos(ang) * vh * tb, v0 * tb - 4.9 * tb * tb, sin(ang) * vh * tb);
-          float r = (0.004 + 0.003 * hs) * big;
+          float r = (0.006 + 0.004 * hs) * big;
           wp = c + (cr * position.x + cu * position.y) * r;
           vAlpha = 0.85 * (1.0 - smoothstep(0.7, 1.0, tb / tEnd));
           vCrown = 0.0;
@@ -112,13 +112,14 @@ export function createSplash(count, tCanal, awning = []) {
           // the crown seen from the side: the rim of a cup, open at the top, ragged
           vec2 q = vec2(vQ.x, vQ.y * 0.5 + 0.5);
           float rim = abs(length(vec2(q.x, (q.y - 1.0) * 1.6)) - 1.0);
-          a = smoothstep(0.35, 0.0, rim) * step(0.0, q.y) * (0.6 + 0.4 * sfNoise(vec2(atan(q.y - 1.0, q.x) * 6.0, 0.0)));
+          // a thin wall of water, seen mostly at its sides, its top edge broken into points
+          a = smoothstep(0.2, 0.0, rim) * step(0.0, q.y) * mix(0.35, 1.0, abs(q.x)) * (0.5 + 0.5 * sfNoise(vec2(atan(q.y - 1.0, q.x) * 9.0, 0.0)));
         } else {
           a = smoothstep(1.0, 0.3, length(vQ));
         }
         a *= vAlpha;
         if (a < 0.01) discard;
-        vec3 col = uSkyHor * 1.1 + uAmbUp * 0.6 + uFlash * 1.5 + 0.015;
+        vec3 col = uSkyHor * 1.3 + uAmbUp * 0.8 + uFlash * 1.5 + 0.02;
         for (int i = 0; i < ${MAX_LAMPS}; i++){
           vec4 lp = uLampPos[i];
           float d = distance(lp.xyz, vWP);

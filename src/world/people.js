@@ -12,7 +12,7 @@ import { BRIDGE } from './bridge.js';
 
 const ROBES = [[0.12, 0.15, 0.28], [0.32, 0.36, 0.4], [0.22, 0.16, 0.12], [0.74, 0.71, 0.65], [0.07, 0.07, 0.08], [0.2, 0.34, 0.37], [0.42, 0.3, 0.32]];
 const UMBRELLAS = [[0.62, 0.12, 0.06], [0.76, 0.48, 0.16], [0.82, 0.7, 0.48], [0.22, 0.38, 0.24], [0.2, 0.26, 0.44], [0.74, 0.4, 0.4]];
-const SKIN = [0.72, 0.56, 0.46], HAIR = [0.05, 0.045, 0.04];
+const SKIN = [0.64, 0.48, 0.38], HAIR = [0.05, 0.045, 0.04];
 
 // the walkers' way, as points with a height and whether a roof is over them
 function buildPath() {
@@ -68,18 +68,43 @@ function ribTexture() {
   return t;
 }
 
+// eyes, brows, nose and mouth on a head (about 0.09 across, 0.11 high) whose middle is at (0, y, z): enough that a
+// face reads as one at a few metres
+export const face = (kit, y, z, mat = 'body', o = {}) => {
+  const ink = o.ink || [0.06, 0.05, 0.045], lip = o.lip || [0.42, 0.24, 0.2];
+  for (const sx of [-1, 1]) {
+    kit.box(mat, sx * 0.032, y + 0.012, z + 0.093, 0.026, 0.009, 0.01, { rz: sx * 0.08, col: ink });
+    kit.box(mat, sx * 0.033, y + 0.033, z + 0.09, 0.03, 0.007, 0.01, { rz: -sx * 0.12, col: ink });
+  }
+  kit.box(mat, 0, y - 0.008, z + 0.1, 0.018, 0.034, 0.02, { rx: -0.2, col: o.skin || SKIN });
+  kit.box(mat, 0, y - 0.045, z + 0.088, 0.03, 0.007, 0.01, { col: lip });
+};
+
+// A walker in a long robe crossed at the front (交领) and tied with a sash, wide sleeves with the hands showing, the
+// head with its hair drawn back over the crown and down to the nape, in a topknot (发髻) or a low bun
 function walkerBody(kit, R) {
   const robe = R.pick(ROBES);
   const prof = [[0.2, 0.04], [0.19, 0.4], [0.16, 0.9], [0.18, 1.18], [0.2, 1.32], [0.12, 1.4], [0.05, 1.44]];
   kit.add('body', new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 12), { col: robe });
+  const dark = robe.map((c) => c * 0.45), pale = robe.map((c) => c * 0.4 + 0.45);
+  kit.cyl('body', 0, 0.95, 0, 0.168, 0.164, 0.07, { sides: 12, col: dark });
+  // the collar's edges, the left lapping over the right (右衽), from the neck down across the chest
+  kit.tube('body', [new THREE.Vector3(0.05, 1.43, 0.06), new THREE.Vector3(0.01, 1.36, 0.155), new THREE.Vector3(-0.08, 1.22, 0.2)], [0.014, 0.014, 0.014], 4, { col: pale });
+  kit.tube('body', [new THREE.Vector3(-0.05, 1.43, 0.06), new THREE.Vector3(-0.025, 1.37, 0.15), new THREE.Vector3(0.0, 1.33, 0.19)], [0.012, 0.012, 0.012], 4, { col: pale });
   for (const sx of [-1, 1]) kit.box('body', sx * 0.08, 0.03, 0.06, 0.08, 0.06, 0.2, { col: HAIR });
-  kit.add('body', new THREE.SphereGeometry(0.1, 12, 10), { local: new THREE.Matrix4().makeTranslation(0, 1.56, 0), col: SKIN });
-  kit.add('body', new THREE.SphereGeometry(0.107, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.62), { local: new THREE.Matrix4().makeTranslation(0, 1.572, -0.022), col: HAIR });
-  // a bun at the back, or a plait's knot
-  kit.add('body', new THREE.SphereGeometry(0.055, 8, 6), { local: new THREE.Matrix4().makeTranslation(0, 1.58, -0.11), col: HAIR });
-  // the umbrella arm bent up to the handle in front, the other hanging
-  kit.tube('body', [new THREE.Vector3(0.17, 1.34, 0), new THREE.Vector3(0.2, 1.08, 0.08), new THREE.Vector3(0.07, 1.2, 0.2)], [0.045, 0.042, 0.035], 6, { col: robe });
-  kit.tube('body', [new THREE.Vector3(-0.17, 1.34, 0), new THREE.Vector3(-0.2, 1.05, 0.02), new THREE.Vector3(-0.17, 0.82, 0.05)], [0.045, 0.042, 0.035], 6, { col: robe });
+  const at = (x, y, z, sx = 1, sy = 1, sz = 1) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion(), new THREE.Vector3(sx, sy, sz));
+  kit.cyl('body', 0, 1.47, 0.005, 0.038, 0.045, 0.08, { sides: 8, col: SKIN });
+  kit.add('body', new THREE.SphereGeometry(0.1, 12, 10), { local: at(0, 1.565, 0.01, 0.9, 1.12, 1.0), col: SKIN });
+  for (const sx of [-1, 1]) kit.add('body', new THREE.SphereGeometry(0.02, 6, 5), { local: at(sx * 0.093, 1.56, 0.0, 0.5, 1, 0.8), col: SKIN });
+  face(kit, 1.565, 0.01);
+  kit.add('body', new THREE.SphereGeometry(0.104, 12, 10), { local: at(0, 1.578, -0.022, 0.92, 1.1, 1.0), col: HAIR });
+  if (R.next() < 0.5) kit.add('body', new THREE.SphereGeometry(0.04, 8, 6), { local: at(0, 1.69, -0.02, 1, 1.15, 1), col: HAIR });
+  else kit.add('body', new THREE.SphereGeometry(0.055, 8, 6), { local: at(0, 1.55, -0.115), col: HAIR });
+  // the umbrella arm bent up to the handle in front, the other hanging, the sleeves widening to the cuff
+  kit.tube('body', [new THREE.Vector3(0.17, 1.34, 0), new THREE.Vector3(0.2, 1.08, 0.08), new THREE.Vector3(0.09, 1.19, 0.18)], [0.045, 0.05, 0.062], 7, { col: robe });
+  kit.tube('body', [new THREE.Vector3(-0.17, 1.34, 0), new THREE.Vector3(-0.2, 1.05, 0.02), new THREE.Vector3(-0.18, 0.84, 0.05)], [0.045, 0.05, 0.062], 7, { col: robe });
+  kit.add('body', new THREE.SphereGeometry(0.032, 7, 6), { local: at(0.07, 1.2, 0.2, 1, 1.1, 1), col: SKIN });
+  kit.add('body', new THREE.SphereGeometry(0.032, 7, 6), { local: at(-0.18, 0.79, 0.05, 0.8, 1.25, 1), col: SKIN });
   return R.pick(UMBRELLAS);
 }
 

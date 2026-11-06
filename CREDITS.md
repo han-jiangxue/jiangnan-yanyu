@@ -69,10 +69,13 @@ textures shrunk to 512 WebP by `scripts/fetch-assets.mjs`:
 | [antique_ceramic_vase_01](https://polyhaven.com/a/antique_ceramic_vase_01) | wine jars by the doors |
 | [planter_pot_clay](https://polyhaven.com/a/planter_pot_clay) | pots by the doors |
 
-The roof tiles, window lattices and everything built (houses, bridge, banks) are drawn in code. So are the willows, the boats and the boatman, the people and their umbrellas, the banners, the laundry, the grass,
-the lotus pads and the banana plants.
+The roof tiles, window lattices and everything built (houses, bridge, banks) are drawn in code. So are the willows, the
+maples and the apricot blossom, the boats and the boatman, the people and their umbrellas, the banners, the laundry, the
+grass, the lotus (pads, leaves, flowers and broken stems) and the banana plants, and the falling leaves and petals, the
+willow down, the snow, the fireflies and the splashes.
 
 ## Sound
 
-There are no recordings. The rain, the drips, the oar's creak and swish, the water, the thunder, the temple bell and
-the reverb are all synthesized in code (`src/audio/synth.js`) and mixed live with Web Audio.
+There are no recordings. The rain, the drips, the oar's creak and swish, the water, the thunder, the temple bell, the
+birds, the cicadas, the frogs, the crickets, the dry leaves, the hiss of snow and the reverb are all synthesized in code
+(`src/audio/synth.js`) and mixed live with Web Audio.

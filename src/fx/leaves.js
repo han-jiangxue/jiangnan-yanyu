@@ -1,8 +1,9 @@
 // Falling leaves in autumn: each leaf belongs to one of the eight tree crowns nearest the camera, lets go somewhere in
 // it, tumbles down fluttering and carried by the wind, and lands: on the canal it floats off with the current (and
 // joins the leaves the water draws, world/water.js), on the stones it lies a while; then it fades and starts again
-// from its crown. More of them fall in a wind, faster and straighter in the rain; a maple sheds more, and red. All
-// motion runs in the vertex shader; the CPU only hands over the crowns.
+// from its crown. More of them fall in a wind, faster and straighter in the rain; a maple sheds more, and red. In
+// spring the apricots shed their petals the same way, slower and lighter (沾衣欲湿杏花雨). All motion runs in the
+// vertex shader; the CPU only hands over the crowns.
 // (Sakura Fantasy's leaves circle the camera for good; here they come from the trees and come to rest.)
 import * as THREE from 'three';
 import { U, UNIFORMS_GLSL, NOISE, ATMOS, MAX_LAMPS } from '../core/shared.js';
@@ -13,7 +14,7 @@ import { rng } from '../lib/math.js';
 const SLOTS = 8;
 const FAR = 50; // a crown farther than this gives up its slot to a nearer one
 
-// crowns: [{ x, y, z, r, kind: 0 willow, 1 maple }]; tCanal: the canal's centre-line lookup (world/water.js)
+// crowns: [{ x, y, z, r, kind: 0 willow, 1 maple, 2 apricot }]; tCanal: the canal's centre-line lookup (world/water.js)
 export function createLeaves(count, crowns, tCanal) {
   const R = rng(17);
   const geo = new THREE.InstancedBufferGeometry();
@@ -60,10 +61,14 @@ export function createLeaves(count, crowns, tCanal) {
       void main(){
         int slot = gl_InstanceID - (gl_InstanceID / ${SLOTS}) * ${SLOTS};
         vec4 cr = uCrowns[slot];
+        // a crown's radius, negative for a maple, plus 100 for an apricot
         float maple = cr.w < 0.0 ? 1.0 : 0.0;
-        float rad = abs(cr.w);
-        // the share falling now: more in a wind or the rain, more off a maple
-        float rate = uSeason.z * clamp(0.4 + 0.6 * uWind.z + 0.3 * uRain, 0.0, 1.0) * (1.0 + 0.5 * maple);
+        float apricot = cr.w > 50.0 ? 1.0 : 0.0;
+        float rad = apricot > 0.5 ? cr.w - 100.0 : abs(cr.w);
+        // the share falling now: more in a wind or the rain, more off a maple; an apricot's petals in spring
+        float stir = clamp(0.4 + 0.6 * uWind.z + 0.3 * uRain, 0.0, 1.0);
+        float petals = uSeason.x * apricot;
+        float rate = uSeason.z * stir * (1.0 + 0.5 * maple) + petals * stir * 1.4;
         if (rad < 0.01 || float(gl_InstanceID) / uCount > rate) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
         // its own round: lets go, falls, rests, fades; each round from a new place in the crown
         float T = 9.0 + 6.0 * aSeed.w;
@@ -74,8 +79,9 @@ export function createLeaves(count, crowns, tCanal) {
         float a0 = r1 * 6.2832, d0 = sqrt(r2) * rad * 0.85;
         // a willow's leaves hang on its strands, well below the crown; a maple's are in it
         vec3 p0 = cr.xyz + vec3(cos(a0) * d0, rad * mix(0.2 - 1.3 * r3, 0.45 - 0.9 * r3, maple), sin(a0) * d0);
-        float v = (0.5 + 0.35 * r4) * (1.0 + 0.7 * uRain);
-        float fl = 1.0 - 0.6 * uRain;
+        float petal = step(0.5, petals);
+        float v = (0.5 + 0.35 * r4) * (1.0 + 0.7 * uRain) * mix(1.0, 0.55, petal);
+        float fl = (1.0 - 0.6 * uRain) * mix(1.0, 1.5, petal);
         vec3 drift = vec3(uWind.x, 0.0, uWind.y) * (0.15 + 1.4 * uWind.z) * (0.6 + 0.8 * r1);
         float ph = r2 * 31.0;
         // where it lands, and when: first as if over the water, then again for the stones if it comes down on them
@@ -107,16 +113,17 @@ export function createLeaves(count, crowns, tCanal) {
         }
         ev = normalize(ev - eu * dot(ev, eu));
         // a maple's own leaf, or off a willow its narrow leaf or (more often, and easier to see) a broad one blown in
-        float kind = maple > 0.5 ? 2.0 : step(0.4, fract(r2 * 7.3));
-        float size = kind > 1.5 ? 0.06 + 0.03 * r4 : kind > 0.5 ? 0.055 + 0.03 * r4 : 0.05 + 0.025 * r4;
+        // (or a petal)
+        float kind = petal > 0.5 ? 3.0 : maple > 0.5 ? 2.0 : step(0.4, fract(r2 * 7.3));
+        float size = kind > 2.5 ? 0.02 + 0.012 * r4 : kind > 1.5 ? 0.06 + 0.03 * r4 : kind > 0.5 ? 0.055 + 0.03 * r4 : 0.05 + 0.025 * r4;
         vec3 wp = p + (eu * position.x + ev * position.y * (kind > 1.5 ? 1.0 : kind > 0.5 ? 0.7 : 0.35)) * size;
         // in at the start of its round, out at the end, gone far off and at the lens
         float dc = distance(wp, cameraPosition);
         vAlpha = smoothstep(0.0, 0.8, t) * (1.0 - smoothstep(T - 2.0, T, t)) * smoothstep(${FAR.toFixed(1)} - 5.0, 28.0, dc) * smoothstep(0.4, 1.2, dc);
         vQ = position.xy;
         vKind = kind;
-        // a maple's red to orange, the others gold to rust
-        vCol = maple > 0.5 ? mix(vec3(0.5, 0.05, 0.02), vec3(0.62, 0.22, 0.03), r3) : mix(vec3(0.52, 0.32, 0.03), vec3(0.32, 0.13, 0.03), r3 * r3);
+        // a maple's red to orange, the others gold to rust, a petal white flushed with pink
+        vCol = kind > 2.5 ? mix(vec3(0.88, 0.8, 0.8), vec3(0.86, 0.62, 0.66), r3) : maple > 0.5 ? mix(vec3(0.5, 0.05, 0.02), vec3(0.62, 0.22, 0.03), r3) : mix(vec3(0.52, 0.32, 0.03), vec3(0.32, 0.13, 0.03), r3 * r3);
         vWP = wp;
         gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
       }`,
@@ -129,7 +136,10 @@ export function createLeaves(count, crowns, tCanal) {
       void main(){
         float sd;
         float t = clamp(vQ.x, -1.0, 1.0);
-        if (vKind > 1.5) {
+        if (vKind > 2.5) {
+          // a petal: round, a little notched at its tip
+          sd = length(vQ * vec2(1.0, 1.25)) - 1.0 + 0.35 * smoothstep(0.25, 0.0, abs(vQ.y)) * step(0.6, vQ.x);
+        } else if (vKind > 1.5) {
           float th = atan(vQ.y, vQ.x);
           sd = length(vQ) - (0.45 + 0.55 * pow(abs(cos(th * 2.5)), 0.7));
         } else if (vKind > 0.5) {
@@ -147,6 +157,8 @@ export function createLeaves(count, crowns, tCanal) {
           col += vCol * uLampCol[i] * 1.2 / (1.0 + 3.0 * d * d / (lp.w * lp.w));
         }
         col *= 1.0 - 0.25 * smoothstep(0.08, 0.0, abs(vQ.y)) * step(vKind, 1.5);
+        // a petal lets the light through
+        col += vCol * (uAmbUp * 0.2 + uSkyHor * 0.08) * step(2.5, vKind);
         gl_FragColor = vec4(sfAtmos(col, vWP), a);
       }`,
   });
@@ -163,11 +175,13 @@ export function createLeaves(count, crowns, tCanal) {
   let wait = 0;
   return {
     mesh,
-    update(camera) {
+    // spring, autumn: the seasons' weights; in spring only the apricots shed anything
+    update(camera, spring, autumn) {
       if (--wait > 0) return;
       wait = 15;
       const c = camera.position;
-      crowns.forEach((k, i) => { dist[i] = Math.hypot(k.x - c.x, k.z - c.z); });
+      // a crown with nothing to shed counts as out of reach
+      crowns.forEach((k, i) => { dist[i] = autumn > 0.01 || (spring > 0.01 && k.kind === 2) ? Math.hypot(k.x - c.x, k.z - c.z) : 1e9; });
       order.sort((a, b) => dist[a] - dist[b]);
       for (const i of order) {
         if (dist[i] > FAR - 5 || slots.includes(i)) continue;
@@ -184,7 +198,7 @@ export function createLeaves(count, crowns, tCanal) {
       slots.forEach((k, j) => {
         const v = uniforms.uCrowns.value[j];
         if (k < 0) v.set(0, -999, 0, 0);
-        else { const t = crowns[k]; v.set(t.x, t.y, t.z, t.kind === 1 ? -t.r : t.r); }
+        else { const t = crowns[k]; v.set(t.x, t.y, t.z, t.kind === 1 ? -t.r : t.kind === 2 ? t.r + 100 : t.r); }
       });
     },
   };
